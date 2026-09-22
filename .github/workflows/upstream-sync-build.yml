@@ -79,8 +79,12 @@ jobs:
            Write-Host "existing=$existingSha; upstream=$upstreamSha; master=$masterSha; forced=$forced; hasUpstream=$hasUpstream; hasCurrentMaster=$hasCurrentMaster"
           $changed = $forced -or -not $hasUpstream -or -not $hasCurrentMaster
           if ($changed) {
-            git checkout --detach $upstreamSha
+            git config user.name 'github-actions[bot]'
+             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+             git checkout --detach $upstreamSha
+             if ($LASTEXITCODE -ne 0) { throw "git checkout of upstream failed" }
              git merge --no-ff --no-edit $masterSha
+             if ($LASTEXITCODE -ne 0) { throw "git merge of current Fork failed" }
              $buildSha = (git rev-parse HEAD).Trim()
              $refspec = '{0}:refs/heads/{1}' -f $buildSha, $env:SYNC_BRANCH
             if ($existingSha -ne '') {
