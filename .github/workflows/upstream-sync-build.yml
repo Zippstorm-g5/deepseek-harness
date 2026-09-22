@@ -69,7 +69,8 @@ jobs:
           if ($changed) {
             $refspec = '{0}:refs/heads/{1}' -f $upstreamSha, $env:SYNC_BRANCH
             if ($existingSha -ne '') {
-              git push --force-with-lease=("refs/heads/{0}:{1}" -f $env:SYNC_BRANCH, $existingSha) origin $refspec
+              $lease = "refs/heads/$($env:SYNC_BRANCH):$existingSha"
+              git push origin $refspec "--force-with-lease=$lease"
             }
             else {
               git push origin $refspec
