@@ -2,7 +2,7 @@
 import { X509Certificate } from 'node:crypto'
 import { readFile, realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { createWindowsTokenSigner } from './windows-sign.mjs'
+import { createWindowsSigner } from './windows-sign.mjs'
 import { inspectWindowsRuntimeSignature, signWindowsCode, type WindowsCodeSigningOptions } from './windows-runtime-signature.mjs'
 import { createCachedSigner, signatureCacheIdentity } from './windows-signature-cache.mjs'
 import { resolveWindowsPackageSettings } from './windows-package-settings.mjs'
@@ -58,8 +58,9 @@ async function main(): Promise<void> {
   try {
     await withWindowsSigningStage({ stage: process.argv.includes('--dsh') ? 'dsh-runtime' : 'primary-runtime', record }, async () => {
       const paths = resolveDesktopTargetBuildPaths()
-      const sign = createWindowsTokenSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
-        keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN })
+      const sign = createWindowsSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
+        keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
+        pfxFile: process.env.DSH_DESKTOP_WINDOWS_PFX_FILE, pfxPassword: process.env.DSH_DESKTOP_WINDOWS_PFX_PASSWORD })
       const identity = await signatureCacheIdentity([
         await realpath(certificateFile), await realpath(process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL!),
         join(import.meta.dirname, 'windows-sign.cmd'), join(import.meta.dirname, 'windows-sign.mjs'),

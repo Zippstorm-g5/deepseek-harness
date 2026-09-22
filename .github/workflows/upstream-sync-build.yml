@@ -64,10 +64,24 @@ jobs:
             }
           }
 
-          $forced = $env:FORCE_SYNC -eq 'true'
-          $changed = $forced -or $existingSha -ne $upstreamSha
+          git fetch --no-tags origin master
+           $masterSha = (git rev-parse refs/remotes/origin/master).Trim()
+           $hasUpstream = $false
+           $hasCurrentMaster = $false
+           if ($existingSha -ne '') {
+             git merge-base --is-ancestor $upstreamSha $existingSha
+             $hasUpstream = $LASTEXITCODE -eq 0
+             git merge-base --is-ancestor $masterSha $existingSha
+             $hasCurrentMaster = $LASTEXITCODE -eq 0
+           }
+
+           $forced = $env:FORCE_SYNC -eq 'true'
+          $changed = $forced -or -not $hasUpstream -or -not $hasCurrentMaster
           if ($changed) {
-            $refspec = '{0}:refs/heads/{1}' -f $upstreamSha, $env:SYNC_BRANCH
+            git checkout --detach $upstreamSha
+             git merge --no-ff --no-edit origin/master
+             $buildSha = (git rev-parse HEAD).Trim()
+             $refspec = '{0}:refs/heads/{1}' -f $buildSha, $env:SYNC_BRANCH
             if ($existingSha -ne '') {
               $lease = "refs/heads/$($env:SYNC_BRANCH):$existingSha"
               git push origin $refspec "--force-with-lease=$lease"
@@ -77,9 +91,11 @@ jobs:
             }
           }
 
-          "changed=$($changed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          else { $buildSha = $existingSha }
+
+           "changed=$($changed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "upstream_sha=$upstreamSha" >> $env:GITHUB_OUTPUT
-          Write-Host "upstream $upstreamSha; changed=$changed"
+          Write-Host "upstream $upstreamSha; build $buildSha; changed=$changed"
 
   build:
     name: Build Windows desktop artifact
@@ -103,6 +119,19 @@ jobs:
           "NODE_COMPILE_CACHE=$env:RUNNER_TEMP/node-compile-cache" >> $env:GITHUB_ENV
           "npm_config_devdir=$env:RUNNER_TEMP/node-gyp" >> $env:GITHUB_ENV
           "TMPDIR=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "SAL_USE_VCLPLUGIN=svp" >> $env:GITHUB_ENV
+
+      - name: Verify Windows LibreOffice prerequisites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @('vcruntime140.dll', 'vcruntime140_1.dll')) {
+            $path = Join-Path $env:SystemRoot "System32/$name"
+            if (-not (Test-Path $path)) { throw "Required Visual C++ runtime is missing: $path" }
+            Write-Host "Found $path"
+          }
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -121,22 +150,118 @@ jobs:
       - name: Build official packages
         run: pnpm run build:official
 
-      - name: Prepare unsigned Windows desktop package
+      - name: Prepare Windows desktop package
         shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.DSH_WINDOWS_PFX_BASE64 }}
+          WINDOWS_CERT_BASE64: ${{ secrets.DSH_WINDOWS_CERT_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.DSH_WINDOWS_PFX_PASSWORD }}
         run: |
-          @'
-          DSH_DESKTOP_APP_ID=com.deepseek.harness
-          DSH_DESKTOP_AUTO_UPDATE_ENV=test
-          DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://harness-test.deepseek.com
-          DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://harness.deepseek.com
-          DSH_DESKTOP_MANDATORY_UPDATE_CONFIG='{"allowedAuthOrigins":["https://login.example.com"]}'
-          '@ | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
-          pnpm run package:desktop:win:x64:unsigned
+          $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
+          $common = @(
+            'DSH_DESKTOP_APP_ID=com.deepseek.harness',
+            'DSH_DESKTOP_AUTO_UPDATE_ENV=test',
+            'DOWNLOAD_TEST_ORIGIN=https://harness-test.deepseek.com',
+            'DOWNLOAD_TEST_RELEASE_ID=00000000000000000000000000000000',
+            'DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://harness-test.deepseek.com',
+            'DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://harness.deepseek.com',
+            'DSH_DESKTOP_MANDATORY_UPDATE_CONFIG=''{"allowedAuthOrigins":["https://login.example.com"]}'''
+          )
+          if ($hasPfx) {
+            $pfx = Join-Path $env:RUNNER_TEMP 'dsh-windows-signing.pfx'
+            $cer = Join-Path $env:RUNNER_TEMP 'dsh-windows-signing.cer'
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+            [IO.File]::WriteAllBytes($cer, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+            $password = $env:WINDOWS_PFX_PASSWORD.Replace("'", "''")
+            $signTool = (Get-ChildItem -Path "${env:ProgramFiles(x86)}\\Windows Kits\\10\\bin\\*\\x64\\signtool.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+            if ([string]::IsNullOrWhiteSpace($signTool)) { throw 'Windows SDK SignTool was not found' }
+            $settings = $common + @(
+              "DSH_DESKTOP_WINDOWS_CER_FILE=$cer",
+              "DSH_DESKTOP_WINDOWS_SIGNTOOL=$signTool",
+              "DSH_DESKTOP_WINDOWS_PFX_FILE=$pfx",
+              "DSH_DESKTOP_WINDOWS_PFX_PASSWORD='$password'",
+              'DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER=github',
+              'DSH_DESKTOP_WINDOWS_GITHUB_OWNER=Zippstorm-g5',
+              'DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY=deepseek-harness'
+            )
+            $settings | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
+            pnpm run package:desktop:win:x64
+          }
+          else {
+            $common | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
+            pnpm run package:desktop:win:x64:unsigned
+          }
 
-      - name: Upload unsigned desktop artifact
+      - name: Upload packaging diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deepseek-harness-win-x64-unsigned-${{ needs.sync.outputs.upstream_sha }}
-          path: apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**
+          name: deepseek-harness-packaging-diagnostics-${{ needs.sync.outputs.upstream_sha }}
+          path: |
+            apps/desktop/.desktop-build/packaging-runs/**
+            apps/desktop/.desktop-build/targets/win-x64/artifacts/**
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepseek-harness-win-x64-${{ needs.sync.outputs.upstream_sha }}
+          path: |
+            apps/desktop/.desktop-build/targets/win-x64/artifacts/**
+            apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: [sync, build]
+    if: needs.sync.outputs.changed == 'true'
+    runs-on: windows-latest
+    env:
+      WINDOWS_PFX_BASE64: ${{ secrets.DSH_WINDOWS_PFX_BASE64 }}
+      WINDOWS_CERT_BASE64: ${{ secrets.DSH_WINDOWS_CERT_BASE64 }}
+    permissions:
+      contents: write
+    steps:
+      - name: Skip release without PFX secrets
+        if: env.WINDOWS_PFX_BASE64 == '' || env.WINDOWS_CERT_BASE64 == ''
+        shell: pwsh
+        run: |
+          Write-Host 'Release skipped: DSH_WINDOWS_PFX_BASE64 and DSH_WINDOWS_CERT_BASE64 are not configured.'
+
+      - name: Check out synchronized source
+        if: env.WINDOWS_PFX_BASE64 != '' && env.WINDOWS_CERT_BASE64 != ''
+        uses: actions/checkout@v6
+        with:
+          ref: upstream-build
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+
+      - name: Download signed desktop artifact
+        if: env.WINDOWS_PFX_BASE64 != '' && env.WINDOWS_CERT_BASE64 != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: deepseek-harness-win-x64-${{ needs.sync.outputs.upstream_sha }}
+          path: release-input
+
+      - name: Create immutable GitHub Release
+        if: env.WINDOWS_PFX_BASE64 != '' && env.WINDOWS_CERT_BASE64 != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content -Raw apps/desktop/package.json | ConvertFrom-Json).version
+          $tag = "nightly-v$version"
+          $repo = 'Zippstorm-g5/deepseek-harness'
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) { throw "GitHub Release $tag already exists; refusing to overwrite the official version" }
+          $root = Join-Path $pwd 'release-input/artifacts'
+          if (-not (Test-Path $root)) { throw 'Signed artifact directory was not produced' }
+          $assets = Get-ChildItem -LiteralPath $root -File | Where-Object { $_.Extension -in @('.exe', '.blockmap', '.yml', '.yaml') }
+          if ($assets.Count -eq 0) { throw 'No installer, blockmap, or update metadata was produced' }
+          if (-not ($assets.Name -contains 'nightly.yml')) { throw 'nightly.yml was not produced by electron-builder' }
+          gh release create $tag --repo $repo --target upstream-build --prerelease --title "DeepSeek Harness $version" --notes "Automated Windows nightly built from upstream ${{ needs.sync.outputs.upstream_sha }}" @($assets.FullName)
