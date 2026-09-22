@@ -65,7 +65,7 @@ jobs:
           }
 
           git fetch --no-tags origin master
-           $masterSha = (git rev-parse refs/remotes/origin/master).Trim()
+           $masterSha = $env:GITHUB_SHA
            $hasUpstream = $false
            $hasCurrentMaster = $false
            if ($existingSha -ne '') {
@@ -80,7 +80,7 @@ jobs:
           $changed = $forced -or -not $hasUpstream -or -not $hasCurrentMaster
           if ($changed) {
             git checkout --detach $upstreamSha
-             git merge --no-ff --no-edit origin/master
+             git merge --no-ff --no-edit $masterSha
              $buildSha = (git rev-parse HEAD).Trim()
              $refspec = '{0}:refs/heads/{1}' -f $buildSha, $env:SYNC_BRANCH
             if ($existingSha -ne '') {
