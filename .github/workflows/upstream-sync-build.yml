@@ -75,7 +75,8 @@ jobs:
              $hasCurrentMaster = $LASTEXITCODE -eq 0
            }
 
-           $forced = $env:FORCE_SYNC -eq 'true'
+           $forced = $env:FORCE_SYNC -match '^(?i:true)$'
+           Write-Host "existing=$existingSha; upstream=$upstreamSha; master=$masterSha; forced=$forced; hasUpstream=$hasUpstream; hasCurrentMaster=$hasCurrentMaster"
           $changed = $forced -or -not $hasUpstream -or -not $hasCurrentMaster
           if ($changed) {
             git checkout --detach $upstreamSha
@@ -85,6 +86,7 @@ jobs:
             if ($existingSha -ne '') {
               $lease = "refs/heads/$($env:SYNC_BRANCH):$existingSha"
               git push origin $refspec "--force-with-lease=$lease"
+               if ($LASTEXITCODE -ne 0) { throw "git push of $env:SYNC_BRANCH failed" }
             }
             else {
               git push origin $refspec
