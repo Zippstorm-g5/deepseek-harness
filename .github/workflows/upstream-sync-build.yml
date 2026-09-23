@@ -205,9 +205,11 @@ jobs:
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
             [IO.File]::WriteAllBytes($cer, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
             Write-Host 'Wrote temporary PFX and public certificate.'
-            Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+            certutil.exe -f -user -addstore Root $cer | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to trust public certificate as a current-user root: $LASTEXITCODE" }
             Write-Host 'Trusted public certificate as a current-user root.'
-            Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
+            certutil.exe -f -user -addstore TrustedPublisher $cer | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to trust public certificate as a current-user publisher: $LASTEXITCODE" }
             Write-Host 'Trusted public certificate as a current-user publisher.'
             $password = $env:WINDOWS_PFX_PASSWORD.Replace("'", "''")
             $signTool = (Get-ChildItem -Path "${env:ProgramFiles(x86)}\\Windows Kits\\10\\bin\\*\\x64\\signtool.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
