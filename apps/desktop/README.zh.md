@@ -297,7 +297,7 @@ Windows 签名构建在编译或准备依赖前执行受监督的签名预检。
 
 Windows NSIS 上传要求安装包旁存在生成的非空 `.exe.blockmap`。blockmap 先于通道 YAML 上传；NSIS 安装包元数据不要求另一种 web-installer 格式使用的内嵌 `blockMapSize`。文件清单测试使用固定版本构建器的 blockmap 生成器，而不是手工编造内嵌映射字段。
 
-签名 Windows 配置从同一份公开证书的 `CN`、`O` 和 `C` 属性生成 updater 的 `publisherName`。每个属性都必须存在、非空且只有一个值。这些身份属性允许证书续期，无需固定叶证书指纹。已安装应用的 `app-update.yml` 保存预期发布者，下载的清单不能选择该身份。设置 `DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER=github`、`DSH_DESKTOP_WINDOWS_GITHUB_OWNER` 和 `DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY` 后，构建会生成 GitHub Releases 使用的 `nightly.yml`；发布任务必须同时上传该清单、安装包和 blockmap。Windows 签名准备会移除证书输入，但会保留这些发布设置，直到 electron-builder 写入已安装应用的更新配置。GitHub 的预发布标签必须是标准 semver（`v<version>`），因为 electron-updater 选择 nightly 发布时会忽略非 semver 标签。未签名测试构建省略 updater 配置。真实文件验证及其限制见[签名验收记录](tests/README.zh.md)。
+签名 Windows 配置从同一份公开证书的 `CN`、`O` 和 `C` 属性生成 updater 的 `publisherName`。每个属性都必须存在、非空且只有一个值。这些身份属性允许证书续期，无需固定叶证书指纹。已安装应用的 `app-update.yml` 保存预期发布者，下载的清单不能选择该身份。设置 `DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER=github`、`DSH_DESKTOP_WINDOWS_GITHUB_OWNER` 和 `DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY` 后，构建会生成 GitHub Releases 使用的 `nightly.yml`；发布任务必须同时上传该清单、安装包和 blockmap。Windows 签名准备会移除证书输入，但会保留这些发布设置，直到 electron-builder 写入已安装应用的更新配置。GitHub 的预发布标签必须是标准 semver，且第一个预发布标识符为 `nightly`（例如 `v0.1.7-nightly.36`），因为 electron-updater 从标签选择该通道；安装包和 `nightly.yml` 保留实际产品版本。未签名测试构建省略 updater 配置。真实文件验证及其限制见[签名验收记录](tests/README.zh.md)。
 
 本项目使用的 SafeNet Token 出现 `SignTool Error: No private key is available.` 时，说明 PIN（密码）错误。立即停止所有签名尝试，等待用户处理 PIN 后再继续。PIN 输错达到五次会锁定 Token。遇到该错误后，不得重试打包或签名探针。签名器串行执行 Token 操作，首次失败后拒绝所有排队任务。
 

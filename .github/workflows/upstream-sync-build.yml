@@ -293,8 +293,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = '${{ needs.build.outputs.build_version }}'
           if ([string]::IsNullOrWhiteSpace($version)) { throw 'Build job did not report the nightly version' }
-          # electron-updater's GitHub provider ignores non-semver release tags when selecting prereleases.
-          $tag = "v$version"
+          # The configured `nightly` channel only selects semver prerelease tags whose first prerelease identifier is `nightly`.
+          if ($version -notmatch '^(?<core>\d+\.\d+\.\d+)(?:-[0-9A-Za-z.-]+)?$') { throw "Build version is not valid semver: $version" }
+          $tag = "v$($Matches.core)-nightly.${{ github.run_number }}"
           $repo = 'Zippstorm-g5/deepseek-harness'
           gh release view $tag --repo $repo *> $null
           if ($LASTEXITCODE -eq 0) { throw "GitHub Release $tag already exists; refusing to overwrite the official version" }
