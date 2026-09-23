@@ -76,6 +76,9 @@ it('forwards PFX credentials to the isolated signing preflight', async () => {
   expect(run.run.mock.calls[0]![3].env).toMatchObject({
     DSH_DESKTOP_WINDOWS_PFX_FILE: 'C:\\fixture\\test.pfx', DSH_DESKTOP_WINDOWS_PFX_PASSWORD: 'fixture-password',
   })
+  const smoke = run.run.mock.calls.find(([stage]) => stage.includes('smoke-packaged-runtime'))
+  expect(smoke?.[3].env).toMatchObject({ DSH_DESKTOP_WINDOWS_PFX_FILE: '' })
+  expect(smoke?.[3].env).not.toHaveProperty('DSH_DESKTOP_WINDOWS_PFX_PASSWORD')
 })
 
 it('initializes shared storage only after acquiring the preflight stage lock', async () => {
