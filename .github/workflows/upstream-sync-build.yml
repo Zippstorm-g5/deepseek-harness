@@ -171,6 +171,7 @@ jobs:
         run: pnpm run build:official
 
       - name: Prepare Windows desktop package
+        timeout-minutes: 150
         shell: pwsh
         env:
           WINDOWS_PFX_BASE64: ${{ secrets.DSH_WINDOWS_PFX_BASE64 }}
@@ -178,15 +179,24 @@ jobs:
           WINDOWS_PFX_PASSWORD: ${{ secrets.DSH_WINDOWS_PFX_PASSWORD }}
           BUILD_VERSION: ${{ steps.version.outputs.build_version }}
         run: |
+          $ErrorActionPreference = 'Stop'
           $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
+          $pnpm = (Get-Command pnpm.cmd).Source
+          function Invoke-DesktopPackaging([string[]] $arguments) {
+            $process = Start-Process -FilePath $pnpm -ArgumentList $arguments -NoNewWindow -PassThru
+            while (-not $process.WaitForExit(300000)) {
+              Write-Host "Desktop packaging is still running (elapsed $([math]::Round(((Get-Date) - $process.StartTime).TotalMinutes)) minutes)."
+            }
+            if ($process.ExitCode -ne 0) { throw "Desktop packaging failed with exit code $($process.ExitCode)" }
+          }
+          # GitHub Releases owns app updates; the optional mandatory-policy endpoint stays in the fork owner's namespace.
           $common = @(
-            'DSH_DESKTOP_APP_ID=com.deepseek.harness',
+            'DSH_DESKTOP_APP_ID=io.github.zippstormg5.deepseekharness',
             'DSH_DESKTOP_AUTO_UPDATE_ENV=test',
-            'DOWNLOAD_TEST_ORIGIN=https://harness-test.deepseek.com',
+            'DOWNLOAD_TEST_ORIGIN=https://zippstorm-g5.github.io',
             'DOWNLOAD_TEST_RELEASE_ID=00000000000000000000000000000000',
-            'DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://harness-test.deepseek.com',
-            'DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://harness.deepseek.com',
-            'DSH_DESKTOP_MANDATORY_UPDATE_CONFIG=''{"allowedAuthOrigins":["https://login.example.com"]}'''
+            'DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://zippstorm-g5.github.io',
+            'DSH_DESKTOP_MANDATORY_UPDATE_CONFIG=''{"allowedAuthOrigins":["https://zippstorm-g5.github.io"]}'''
           )
           if ($hasPfx) {
             $pfx = Join-Path $env:RUNNER_TEMP 'dsh-windows-signing.pfx'
@@ -208,11 +218,11 @@ jobs:
               'DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY=deepseek-harness'
             )
             $settings | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
-            pnpm run package:desktop:win:x64 -- --build-version $env:BUILD_VERSION
+            Invoke-DesktopPackaging @('run', 'package:desktop:win:x64', '--', '--build-version', $env:BUILD_VERSION)
           }
           else {
             $common | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
-            pnpm run package:desktop:win:x64:unsigned -- --build-version $env:BUILD_VERSION
+            Invoke-DesktopPackaging @('run', 'package:desktop:win:x64:unsigned', '--', '--build-version', $env:BUILD_VERSION)
           }
 
       - name: Upload packaging diagnostics
