@@ -57,7 +57,7 @@ export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks |
     const resolved = originalResolveFilename(request, parent, isMain, options)
     const physical = isEngineSpecifier(request) ? physicalEnginePath(resolved, archive, root) : resolved
     if (process.env.DSH_DESKTOP_OFFICE_TRACE === '1' && isEngineSpecifier(request)) {
-      console.error(`desktop Office engine require.resolve: ${resolved} -> ${physical}`)
+      console.log(`desktop Office engine require.resolve: ${resolved} -> ${physical}`)
     }
     return physical
   }
@@ -77,7 +77,7 @@ export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks |
       }
       const physical = realpathSync(fileURLToPath(destination + canonical.slice(source.length)))
       if (process.env.DSH_DESKTOP_OFFICE_TRACE === '1') {
-        console.error(`desktop Office engine import: ${resolved.url} -> ${physical}`)
+        console.log(`desktop Office engine import: ${resolved.url} -> ${physical}`)
       }
       return { ...resolved, url: pathToFileURL(physical).href }
     },
