@@ -52,12 +52,13 @@ async function fixture() {
   const compiler = join(root, 'Microsoft.NET/Framework64/v4.0.30319/csc.exe')
   await mkdir(dirname(compiler), { recursive: true })
   await writeFile(compiler, 'inert compiler')
-  const environment = { SystemRoot: root,
-    DSH_DESKTOP_WINDOWS_CER_FILE: join(root, 'public.cer'),
-    DSH_DESKTOP_WINDOWS_SIGNTOOL: join(root, 'signtool.exe'),
+  const certificateFile = join(root, 'public.cer')
+  const signTool = join(root, 'signtool.exe')
+  const environment: NodeJS.ProcessEnv = { SystemRoot: root,
+    DSH_DESKTOP_WINDOWS_CER_FILE: certificateFile, DSH_DESKTOP_WINDOWS_SIGNTOOL: signTool,
     DSH_DESKTOP_WINDOWS_KEY_CONTAINER: 'fixture-container', DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'fixture-pin' }
-  await writeFile(environment.DSH_DESKTOP_WINDOWS_CER_FILE, 'inert certificate')
-  await writeFile(environment.DSH_DESKTOP_WINDOWS_SIGNTOOL, 'inert signer')
+  await writeFile(certificateFile, 'inert certificate')
+  await writeFile(signTool, 'inert signer')
   const sequence: string[] = []
   const compile = vi.fn(async (_compiler: string, _source: string, output: string) => {
     sequence.push('compile'); await writeFile(output, 'inert unsigned probe')
@@ -69,7 +70,7 @@ async function fixture() {
       ? { status: 'NotSigned', timestamped: false, thumbprint: null }
       : { status: 'Valid', timestamped: true, thumbprint: 'A'.repeat(40) }
   })
-  return { root, compiler, sequence, runDirectory: run.directory, environment, stateDirectory: join(root, 'state'), compile, sign, inspect }
+  return { root, compiler, certificateFile, signTool, sequence, runDirectory: run.directory, environment, stateDirectory: join(root, 'state'), compile, sign, inspect }
 }
 
 it('compiles one new probe and verifies one production-format signature before success', async () => {
@@ -83,6 +84,19 @@ it('compiles one new probe and verifies one production-format signature before s
   expect(events).not.toContain('fixture-pin')
 })
 
+it('accepts an untrusted self-signed PFX only when its configured fingerprint matches', async () => {
+  const options = await fixture()
+  const pfx = join(options.root, 'test.pfx')
+  await writeFile(pfx, 'inert PFX')
+  options.environment.DSH_DESKTOP_WINDOWS_PFX_FILE = pfx
+  options.environment.DSH_DESKTOP_WINDOWS_PFX_PASSWORD = 'fixture-password'
+  options.inspect.mockImplementation(async () => options.sign.mock.calls.length === 0
+    ? { status: 'NotSigned', timestamped: false, thumbprint: null }
+    : { status: 'UnknownError', timestamped: true, thumbprint: 'A'.repeat(40) })
+  await preflightWindowsSigning(options)
+  expect(options.sign).toHaveBeenCalledOnce()
+})
+
 it.each(['interlock', 'fatal', 'compiler', 'certificate', 'signTool', 'pin', 'audit'] as const)
 ('rejects static %s failure without compiling or signing', async (failure) => {
   const options = await fixture()
@@ -91,8 +105,8 @@ it.each(['interlock', 'fatal', 'compiler', 'certificate', 'signTool', 'pin', 'au
     await writeFile(join(options.stateDirectory, 'attempt.json'), 'retained attempt')
   } else if (failure === 'fatal') await writeFile(join(options.runDirectory, 'fatal.json'), 'failed')
   else if (failure === 'compiler') await rm(options.compiler)
-  else if (failure === 'certificate') await rm(options.environment.DSH_DESKTOP_WINDOWS_CER_FILE)
-  else if (failure === 'signTool') await rm(options.environment.DSH_DESKTOP_WINDOWS_SIGNTOOL)
+  else if (failure === 'certificate') await rm(options.certificateFile)
+  else if (failure === 'signTool') await rm(options.signTool)
   else if (failure === 'pin') options.environment.DSH_DESKTOP_WINDOWS_TOKEN_PIN = ''
   else {
     await rm(join(options.runDirectory, 'events.jsonl'))

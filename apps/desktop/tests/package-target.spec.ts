@@ -118,8 +118,16 @@ describe('desktop package target', () => {
       DSH_DESKTOP_WINDOWS_TOKEN_PIN: 'token-secret',
       DSH_DESKTOP_WINDOWS_KEY_CONTAINER: 'container',
       DSH_DESKTOP_WINDOWS_SIGNTOOL: 'C:\\tools\\signtool.exe',
+      DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER: 'github',
+      DSH_DESKTOP_WINDOWS_GITHUB_OWNER: 'example-owner',
+      DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY: 'example-repository',
       DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
-    })).toEqual({ DSH_DESKTOP_AUTO_UPDATE_ENV: 'production' })
+    })).toEqual({
+      DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER: 'github',
+      DSH_DESKTOP_WINDOWS_GITHUB_OWNER: 'example-owner',
+      DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY: 'example-repository',
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production',
+    })
   })
 
   it('keeps COS credentials out of every packaging subprocess', () => {
