@@ -181,9 +181,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
+          Write-Host "Windows package configuration: PFX signing=$hasPfx"
           $pnpm = (Get-Command pnpm.cmd).Source
+          Write-Host "Resolved pnpm: $pnpm"
           function Invoke-DesktopPackaging([string[]] $arguments) {
+            Write-Host "Starting pnpm $($arguments -join ' ')"
             & $pnpm @arguments
+            Write-Host "pnpm exited with $LASTEXITCODE"
             if ($LASTEXITCODE -ne 0) { throw "Desktop packaging failed with exit code $LASTEXITCODE" }
           }
           # GitHub Releases owns app updates; the optional mandatory-policy endpoint stays in the fork owner's namespace.
@@ -200,11 +204,24 @@ jobs:
             $cer = Join-Path $env:RUNNER_TEMP 'dsh-windows-signing.cer'
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
             [IO.File]::WriteAllBytes($cer, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+            Write-Host 'Wrote temporary PFX and public certificate.'
             Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+            Write-Host 'Trusted public certificate as a current-user root.'
             Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
+            Write-Host 'Trusted public certificate as a current-user publisher.'
             $password = $env:WINDOWS_PFX_PASSWORD.Replace("'", "''")
             $signTool = (Get-ChildItem -Path "${env:ProgramFiles(x86)}\\Windows Kits\\10\\bin\\*\\x64\\signtool.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
             if ([string]::IsNullOrWhiteSpace($signTool)) { throw 'Windows SDK SignTool was not found' }
+            Write-Host "Resolved SignTool: $signTool"
+            $probe = Join-Path $env:RUNNER_TEMP 'dsh-pfx-signing-probe.exe'
+            Copy-Item -LiteralPath $signTool -Destination $probe -Force
+            Write-Host 'Signing PFX preflight probe.'
+            & $signTool sign /v /fd sha256 /f $pfx /p $env:WINDOWS_PFX_PASSWORD $probe
+            if ($LASTEXITCODE -ne 0) { throw "PFX preflight signing failed with exit code $LASTEXITCODE" }
+            $probeSignature = Get-AuthenticodeSignature -LiteralPath $probe
+            if ($probeSignature.Status -ne 'Valid') { throw "PFX preflight signature is $($probeSignature.Status)" }
+            Remove-Item -LiteralPath $probe -Force
+            Write-Host 'PFX preflight probe passed.'
             $settings = $common + @(
               "DSH_DESKTOP_WINDOWS_CER_FILE=$cer",
               "DSH_DESKTOP_WINDOWS_SIGNTOOL=$signTool",
@@ -215,6 +232,7 @@ jobs:
               'DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY=deepseek-harness'
             )
             $settings | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
+            Write-Host 'Wrote signed Windows package environment.'
             Invoke-DesktopPackaging @('run', 'package:desktop:win:x64', '--', '--build-version', $env:BUILD_VERSION)
           }
           else {
