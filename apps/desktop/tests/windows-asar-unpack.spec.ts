@@ -17,6 +17,7 @@ import { inventoryDesktopRuntime, type DesktopRuntimeDescriptor } from '../src/r
 vi.mock('../scripts/windows-sign.mjs', async importOriginal => ({
   ...await importOriginal<typeof import('../scripts/windows-sign.mjs')>(),
   createWindowsTokenSigner: () => async () => {},
+  createWindowsSigner: () => async () => {},
   installWindowsNsisBootstrapSigner: () => {},
   resolveWindowsUpdatePublisher: () => 'Fixture Publisher',
 }))
