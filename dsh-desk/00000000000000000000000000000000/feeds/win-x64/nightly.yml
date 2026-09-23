@@ -1,0 +1,8 @@
+﻿version: 0.1.7-alpha.2.20260923.32
+files:
+  - url: https://github.com/Zippstorm-g5/deepseek-harness/releases/download/v0.1.7-alpha.2.20260923.32/deepseek-harness-0.1.7-alpha.2.20260923.32-win-x64.exe
+    sha512: Pj6SEsguUma542apvXPat+m/xgnhk9tZbTu9+WSjnlUjNoXKTPvB87MijdEzn07SPaROZgNuAC3jefBDSFUJpw==
+    size: 315148024
+path: https://github.com/Zippstorm-g5/deepseek-harness/releases/download/v0.1.7-alpha.2.20260923.32/deepseek-harness-0.1.7-alpha.2.20260923.32-win-x64.exe
+sha512: Pj6SEsguUma542apvXPat+m/xgnhk9tZbTu9+WSjnlUjNoXKTPvB87MijdEzn07SPaROZgNuAC3jefBDSFUJpw==
+releaseDate: '2026-09-23T13:11:13.753Z'
