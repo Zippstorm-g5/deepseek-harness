@@ -97,7 +97,7 @@ export function resolveWindowsUpdatePublisher(certificateFile) {
 function resolveSignTool(value) {
   const candidate = value?.trim()
   if (!candidate) {
-    throw new Error('DSH_DESKTOP_WINDOWS_SIGNTOOL must identify the SafeNet-compatible SignTool executable')
+    throw new Error('DSH_DESKTOP_WINDOWS_SIGNTOOL must identify the SignTool executable')
   }
   let path
   try {
@@ -108,6 +108,21 @@ function resolveSignTool(value) {
     throw new Error(`DSH_DESKTOP_WINDOWS_SIGNTOOL is missing or is not an executable file: ${candidate}`)
   }
   return path
+}
+
+function resolvePfxFile(value) {
+  const candidate = value?.trim()
+  if (!candidate) {
+    throw new Error('DSH_DESKTOP_WINDOWS_PFX_FILE must identify a PFX signing certificate')
+  }
+  try {
+    const path = realpathSync(candidate)
+    if (!statSync(path).isFile()) throw new Error('not a file')
+    return path
+  }
+  catch {
+    throw new Error(`Windows PFX signing certificate is missing or unreadable: ${candidate}`)
+  }
 }
 
 function redactedSigningOutput(value, secrets) {
@@ -240,6 +255,98 @@ export function createWindowsTokenSigner(options) {
     })
     return pending
   }
+}
+
+/**
+ * Create a software-certificate signer for personal or isolated test releases.
+ *
+ * PFX signing is intentionally opt-in. It does not establish public Windows trust;
+ * clients must already trust the certificate before updater signature verification can succeed.
+ *
+ * @param {{ certificateFile?: string, pfxFile?: string, pfxPassword?: string, signTool?: string, commandInterpreter?: string, runDirectory?: string, stateDirectory?: string, preserveSignature?: (path: string) => Promise<boolean> }} options Public certificate, private PFX, and supervised run settings.
+ * @returns {(configuration: { path: string, hash: string, isNest: boolean }) => Promise<void>} The signing hook.
+ */
+export function createWindowsPfxSigner(options) {
+  const { path: certificateFile, certificate } = resolveCertificateFile(options.certificateFile)
+  const pfxFile = resolvePfxFile(options.pfxFile)
+  const pfxPassword = options.pfxPassword
+  if (pfxPassword === undefined) throw new Error('DSH_DESKTOP_WINDOWS_PFX_PASSWORD must be set; use an empty value for an unencrypted PFX')
+  const signTool = resolveSignTool(options.signTool)
+  let pending = Promise.resolve()
+  return (configuration) => {
+    pending = pending.then(async () => {
+      if (configuration.hash !== 'sha256') {
+        throw new Error(`Windows PFX signing requires SHA-256, received ${configuration.hash}`)
+      }
+      if (configuration.isNest) throw new Error('Windows PFX signing does not support appended signatures')
+      if (await options.preserveSignature?.(configuration.path)) return
+      const secrets = [pfxPassword]
+      const runDirectory = options.runDirectory ?? process.env.DSH_DESKTOP_PACKAGING_RUN_DIR
+      if (!runDirectory) throw new Error('Windows PFX signing requires a supervised packaging run')
+      const { inspectWindowsRuntimeSignature: inspect } = await import('./windows-runtime-signature.mjs')
+      const thumbprint = certificate.fingerprint.replaceAll(':', '')
+      const inspectPfxSignature = async path => {
+        const signature = await inspect(path)
+        if (!['Valid', 'UnknownError'].includes(signature.status) || signature.thumbprint?.toUpperCase() !== thumbprint.toUpperCase()) {
+          throw new Error('Windows PFX signing: signature verification failed')
+        }
+        return { ...signature, status: 'Valid' }
+      }
+      process.stdout.write(`Windows PFX signing: ${configuration.path}\n`)
+      try {
+        await completeWindowsSignature(configuration.path, {
+          thumbprint, inspect: inspectPfxSignature, evidenceDirectory: runDirectory,
+          record: event => recordPackagingEvent(runDirectory, event),
+          normalize: path => normalizeWindowsSignature(path, signTool, scrubWindowsSigningEnvironment(process.env)),
+          timestamp: async path => { await execFileAsync(signTool, ['timestamp', '/v', '/tr', 'http://timestamp.digicert.com', '/td', 'sha256', path], {
+            env: scrubWindowsSigningEnvironment(process.env), windowsHide: true, timeout: 60_000,
+          }) },
+          sign: async (path) => {
+            await repairDanglingAuthenticodeDirectory(path)
+            const attempt = beginWindowsSigningAttempt({ runDirectory,
+              stateDirectory: options.stateDirectory, target: path })
+            let result
+            try {
+              const operation = execFileAsync(signTool, [
+                'sign', '/v', '/fd', 'sha256', '/f', pfxFile,
+                ...(pfxPassword === '' ? [] : ['/p', pfxPassword]), path,
+              ], {
+                env: scrubWindowsSigningEnvironment(process.env), windowsHide: true, timeout: 120_000,
+              })
+              attempt.started(operation.child?.pid ?? null)
+              result = await operation
+              const signature = await inspectPfxSignature(path)
+              if (signature.timestamped) {
+                throw new Error('Windows PFX signing: primary signature verification failed')
+              }
+            }
+            catch (error) {
+              const failure = createRedactedWindowsSigningError(error, path, secrets)
+              attempt.failure(typeof error.code === 'number' || typeof error.code === 'string' ? error.code : null, failure.message)
+              throw failure
+            }
+            attempt.success()
+            const stdout = redactedSigningOutput(result.stdout, secrets)
+            const stderr = redactedSigningOutput(result.stderr, secrets)
+            if (stdout !== '') process.stdout.write(stdout)
+            if (stderr !== '') process.stderr.write(stderr)
+          },
+        })
+      }
+      catch (error) {
+        failPackagingRun(runDirectory, 'pfx-signing-failed')
+        throw error
+      }
+    })
+    return pending
+  }
+}
+
+/** Select PFX signing when configured, otherwise retain the SafeNet signer. */
+export function createWindowsSigner(options) {
+  return options.pfxFile === undefined
+    ? createWindowsTokenSigner(options)
+    : createWindowsPfxSigner(options)
 }
 
 /**

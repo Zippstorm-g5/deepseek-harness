@@ -297,7 +297,7 @@ Windows 签名构建在编译或准备依赖前执行受监督的签名预检。
 
 Windows NSIS 上传要求安装包旁存在生成的非空 `.exe.blockmap`。blockmap 先于通道 YAML 上传；NSIS 安装包元数据不要求另一种 web-installer 格式使用的内嵌 `blockMapSize`。文件清单测试使用固定版本构建器的 blockmap 生成器，而不是手工编造内嵌映射字段。
 
-签名 Windows 配置从同一份公开证书的 `CN`、`O` 和 `C` 属性生成 updater 的 `publisherName`。每个属性都必须存在、非空且只有一个值。这些身份属性允许证书续期，无需固定叶证书指纹。已安装应用的 `app-update.yml` 保存预期发布者，下载的清单不能选择该身份。未签名测试构建省略 updater 配置。真实文件验证及其限制见[签名验收记录](tests/README.zh.md)。
+签名 Windows 配置从同一份公开证书的 `CN`、`O` 和 `C` 属性生成 updater 的 `publisherName`。每个属性都必须存在、非空且只有一个值。这些身份属性允许证书续期，无需固定叶证书指纹。已安装应用的 `app-update.yml` 保存预期发布者，下载的清单不能选择该身份。设置 `DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER=github`、`DSH_DESKTOP_WINDOWS_GITHUB_OWNER` 和 `DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY` 后，构建会生成 GitHub Releases 使用的 `nightly.yml`；发布任务必须同时上传该清单、安装包和 blockmap。未签名测试构建省略 updater 配置。真实文件验证及其限制见[签名验收记录](tests/README.zh.md)。
 
 本项目使用的 SafeNet Token 出现 `SignTool Error: No private key is available.` 时，说明 PIN（密码）错误。立即停止所有签名尝试，等待用户处理 PIN 后再继续。PIN 输错达到五次会锁定 Token。遇到该错误后，不得重试打包或签名探针。签名器串行执行 Token 操作，首次失败后拒绝所有排队任务。
 
@@ -309,13 +309,15 @@ Windows 打包将 7-Zip 过滤器固定为 `BCJ`，以兼容内置的 NSIS 解�
 
 NSIS 在安装阶段清理临时解压目录，完成后才显示完成页或自动启动应用。已安装的生产依赖保持为普通文件；启动时不会再次解压。安装仍会写入完整的应用目录树。
 
-在 `.env.windows` 中填写 `DSH_DESKTOP_WINDOWS_CER_FILE`（公开 EV 叶证书）、`DSH_DESKTOP_WINDOWS_SIGNTOOL`（SafeNet 兼容的 SignTool）、`DSH_DESKTOP_WINDOWS_KEY_CONTAINER`（匹配的私钥容器）和 `DSH_DESKTOP_WINDOWS_TOKEN_PIN`（Token Password）。私钥仍保留在 USB Token；不要把证书或本地凭据文件提交到 Git。
+在 `.env.windows` 中填写 `DSH_DESKTOP_WINDOWS_CER_FILE`（公开证书）、`DSH_DESKTOP_WINDOWS_SIGNTOOL`，以及 SafeNet 组合 `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` 与 `DSH_DESKTOP_WINDOWS_TOKEN_PIN`，或个人测试组合 `DSH_DESKTOP_WINDOWS_PFX_FILE` 与 `DSH_DESKTOP_WINDOWS_PFX_PASSWORD`。SafeNet 私钥仍保留在 USB Token；PFX 包含软件私钥，必须置于 Git 之外。不要提交证书或本地凭据文件。
 
 ```sh
 pnpm run package:desktop:win:x64
 ```
 
 打包前插入并解锁 Token。electron-builder 钩子把每个产物交给采用 CRLF 的 `scripts/windows-sign.cmd`；该 CMD 只调用一次已配置的 SignTool，并指定 `/f`、SafeNet `/kc "[{{PIN}}]=容器"`、`/csp "eToken Base Cryptographic Provider"`和 SHA-256 文件摘要，不请求时间戳。随后钩子在隔离副本上完成 DigiCert SHA-256 RFC 3161 时间戳，不传递签名凭据。钩子不会改用 electron-builder 内置的 SignTool，也不会重试失败的签名请求。SignTool、证书、容器、PIN、Token 或签名不可用时，Windows 发布打包会失败，不会生成未签名产物。
+
+PFX 打包改用通过校验的 PFX 文件和密码调用 SignTool，然后执行相同的时间戳与签名检查。GitHub Actions 不会把自签名证书加入 hosted runner 的信任库，而是校验其密码学签名和精确签名者指纹。GitHub Actions 仅在个人测试发布中读取 `DSH_WINDOWS_PFX_BASE64`、`DSH_WINDOWS_CERT_BASE64` 和 `DSH_WINDOWS_PFX_PASSWORD` secrets；缺少这些 secrets 时只生成未签名诊断产物，不发布 Release。每次同步构建使用不可变的日期与运行序号版本；预发布资产包含安装包、blockmap、`nightly.yml` 以及测试客户端必须信任的公开个人测试证书。
 
 时间戳处理仅对正常退出但返回失败或警告的时间戳命令重试，最多尝试三次，间隔为一秒和两秒。每次均从同一份已验证的主签名开始。启动错误、终止状态不确定或验签失败会立即停止。SignTool 使用短的私有路径；发布时先把已验证字节复制到目标卷，再原子替换。最终必须通过 Windows 信任、证书、时间戳和规范化全文件相等检查。尝试耗尽后停止打包并保留证据，不再次调用硬件。参见[签名完成决策](../../.agents/notes/implemented/process/2026-09-17-windows-signature-completion.zh.md)。
 
