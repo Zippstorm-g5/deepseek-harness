@@ -55,11 +55,7 @@ export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks |
   const originalResolveFilename = nodeModule._resolveFilename
   const resolveFilename: ResolveFilename = (request, parent, isMain, options) => {
     const resolved = originalResolveFilename(request, parent, isMain, options)
-    const physical = isEngineSpecifier(request) ? physicalEnginePath(resolved, archive, root) : resolved
-    if (process.env.DSH_DESKTOP_OFFICE_TRACE === '1' && isEngineSpecifier(request)) {
-      console.log(`desktop Office engine require.resolve: ${resolved} -> ${physical}`)
-    }
-    return physical
+    return isEngineSpecifier(request) ? physicalEnginePath(resolved, archive, root) : resolved
   }
   nodeModule._resolveFilename = resolveFilename
   const source = pathToFileURL(join(root, 'node_modules', '@deepseek-ai', 'libreoffice-kit-')).href
@@ -76,9 +72,6 @@ export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks |
         return resolved
       }
       const physical = realpathSync(fileURLToPath(destination + canonical.slice(source.length)))
-      if (process.env.DSH_DESKTOP_OFFICE_TRACE === '1') {
-        console.log(`desktop Office engine import: ${resolved.url} -> ${physical}`)
-      }
       return { ...resolved, url: pathToFileURL(physical).href }
     },
   })

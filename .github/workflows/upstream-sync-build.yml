@@ -163,7 +163,12 @@ jobs:
           WINDOWS_CERT_BASE64: ${{ secrets.DSH_WINDOWS_CERT_BASE64 }}
           WINDOWS_PFX_PASSWORD: ${{ secrets.DSH_WINDOWS_PFX_PASSWORD }}
         run: |
-          $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
+          $workspaceDrive = 'R:'
+           subst $workspaceDrive $env:GITHUB_WORKSPACE
+           if ($LASTEXITCODE -ne 0) { throw "failed to map $env:GITHUB_WORKSPACE to $workspaceDrive" }
+           try {
+             Set-Location "$workspaceDrive\"
+             $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
           $common = @(
             'DSH_DESKTOP_APP_ID=com.deepseek.harness',
             'DSH_DESKTOP_AUTO_UPDATE_ENV=test',
@@ -196,10 +201,17 @@ jobs:
           else {
             $common | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
             pnpm run package:desktop:win:x64:unsigned
-          }
+           }
+           }
+           finally {
+             Set-Location $env:GITHUB_WORKSPACE
+             subst $workspaceDrive /d | Out-Null
+           }
+
 
       - name: Diagnose packaged LibreOffice helper
         if: always()
+        continue-on-error: true
         shell: pwsh
         run: |
           $root = Join-Path $PWD 'apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/win-unpacked'
@@ -214,8 +226,14 @@ jobs:
             exit 0
           }
           New-Item -ItemType Directory -Force -Path $inputDir | Out-Null
-          python apps/desktop/tests/fixtures/office-conversion-inputs.py $inputDir
+          $python = Join-Path $PWD 'apps/desktop/.desktop-build/targets/win-x64/runtime/primary-runtime/dependencies/python/python.exe'
+          if (-not (Test-Path -LiteralPath $python)) {
+            'packaged Python runtime was not assembled' | Set-Content (Join-Path $diagnostic 'result.txt')
+            exit 0
+          }
+          & $python apps/desktop/tests/fixtures/office-conversion-inputs.py $inputDir
           $profile = Join-Path $diagnostic 'profile'
+           New-Item -ItemType Directory -Force -Path $profile | Out-Null
           $output = Join-Path $diagnostic 'converted.pdf'
           $stdout = Join-Path $diagnostic 'stdout.log'
           $stderr = Join-Path $diagnostic 'stderr.log'

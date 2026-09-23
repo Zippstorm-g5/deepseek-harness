@@ -8,7 +8,6 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { readPrimaryRuntime, workspaceDependencyPaths } from '../../../packages/skill/tool-workspace-dependencies/src/index.ts'
 import { DesktopHostProcess } from '../src/host-process.ts'
-import { runtimeArchivePath } from '../../desktop-host/src/office-engine.ts'
 import { createPluginProfile } from '../src/project-manager.ts'
 import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 
@@ -26,11 +25,9 @@ export async function smokeDesktopRuntime(
 ): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-smoke-'))
   const profile = join(home, 'profiles', 'desktop')
-  const host = new DesktopHostProcess(node, root, profile, undefined, {
-    ...environment, DSH_HOME: home,
-    ...(runtimeArchivePath(root) === undefined ? {} : { DSH_DESKTOP_OFFICE_TRACE: '1' }),
-  }, undefined, join(resourcesRuntime, 'primary-runtime'),
-  { pnpm: join(resourcesRuntime, 'pnpm', 'bin', 'pnpm.cjs'), nodeBin: join(resourcesRuntime, 'bin') })
+  const host = new DesktopHostProcess(node, root, profile, undefined, { ...environment, DSH_HOME: home },
+    undefined, join(resourcesRuntime, 'primary-runtime'),
+    { pnpm: join(resourcesRuntime, 'pnpm', 'bin', 'pnpm.cjs'), nodeBin: join(resourcesRuntime, 'bin') })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     createPluginProfile(profile)
