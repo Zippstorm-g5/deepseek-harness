@@ -79,7 +79,9 @@ export async function preflightWindowsSigning(options: SigningPreflightOptions):
   record({ type: 'signing-preflight-probe', path: output, sha256: createHash('sha256').update(await readFile(output)).digest('hex') })
   await (options.sign ?? signer)({ path: output, hash: 'sha256', isNest: false })
   const signature = await inspect(output)
-  if (signature.status !== 'Valid' || !signature.timestamped || signature.thumbprint?.toUpperCase() !== thumbprint.toUpperCase()) {
+  const acceptsSelfSignedPfx = environment.DSH_DESKTOP_WINDOWS_PFX_FILE !== undefined
+    && signature.status === 'UnknownError' && signature.thumbprint?.toUpperCase() === thumbprint.toUpperCase()
+  if (!(signature.status === 'Valid' || acceptsSelfSignedPfx) || !signature.timestamped || signature.thumbprint?.toUpperCase() !== thumbprint.toUpperCase()) {
     throw new Error('Windows signing preflight verification failed: expected the configured certificate and a valid timestamp')
   }
   record({ type: 'signing-preflight-success', ...signature,
