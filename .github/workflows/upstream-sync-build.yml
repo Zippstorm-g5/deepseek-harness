@@ -183,11 +183,8 @@ jobs:
           $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
           $pnpm = (Get-Command pnpm.cmd).Source
           function Invoke-DesktopPackaging([string[]] $arguments) {
-            $process = Start-Process -FilePath $pnpm -ArgumentList $arguments -NoNewWindow -PassThru
-            while (-not $process.WaitForExit(300000)) {
-              Write-Host "Desktop packaging is still running (elapsed $([math]::Round(((Get-Date) - $process.StartTime).TotalMinutes)) minutes)."
-            }
-            if ($process.ExitCode -ne 0) { throw "Desktop packaging failed with exit code $($process.ExitCode)" }
+            & $pnpm @arguments
+            if ($LASTEXITCODE -ne 0) { throw "Desktop packaging failed with exit code $LASTEXITCODE" }
           }
           # GitHub Releases owns app updates; the optional mandatory-policy endpoint stays in the fork owner's namespace.
           $common = @(

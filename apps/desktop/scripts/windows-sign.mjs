@@ -285,6 +285,7 @@ export function createWindowsPfxSigner(options) {
       if (!runDirectory) throw new Error('Windows PFX signing requires a supervised packaging run')
       const { inspectWindowsRuntimeSignature: inspect } = await import('./windows-runtime-signature.mjs')
       const thumbprint = certificate.fingerprint.replaceAll(':', '')
+      process.stdout.write(`Windows PFX signing: ${configuration.path}\n`)
       try {
         await completeWindowsSignature(configuration.path, {
           thumbprint, inspect, evidenceDirectory: runDirectory,
@@ -303,7 +304,7 @@ export function createWindowsPfxSigner(options) {
                 'sign', '/v', '/fd', 'sha256', '/f', pfxFile,
                 ...(pfxPassword === '' ? [] : ['/p', pfxPassword]), path,
               ], {
-                env: scrubWindowsSigningEnvironment(process.env), windowsHide: true,
+                env: scrubWindowsSigningEnvironment(process.env), windowsHide: true, timeout: 120_000,
               })
               attempt.started(operation.child?.pid ?? null)
               result = await operation
