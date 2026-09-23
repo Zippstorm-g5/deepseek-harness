@@ -2,7 +2,7 @@
 import { X509Certificate } from 'node:crypto'
 import { readFile, realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { createWindowsTokenSigner } from './windows-sign.mjs'
+import { createWindowsSigner } from './windows-sign.mjs'
 import { inspectWindowsRuntimeSignature, signWindowsCode, type WindowsCodeSigningOptions } from './windows-runtime-signature.mjs'
 import { createCachedSigner, signatureCacheIdentity } from './windows-signature-cache.mjs'
 import { resolveWindowsPackageSettings } from './windows-package-settings.mjs'
@@ -58,8 +58,16 @@ async function main(): Promise<void> {
   try {
     await withWindowsSigningStage({ stage: process.argv.includes('--dsh') ? 'dsh-runtime' : 'primary-runtime', record }, async () => {
       const paths = resolveDesktopTargetBuildPaths()
-      const sign = createWindowsTokenSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
-        keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN })
+      const sign = createWindowsSigner({ certificateFile, signTool: process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
+        keyContainer: process.env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER, tokenPin: process.env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
+        pfxFile: process.env.DSH_DESKTOP_WINDOWS_PFX_FILE, pfxPassword: process.env.DSH_DESKTOP_WINDOWS_PFX_PASSWORD })
+      const untrustedSignerThumbprint = process.env.DSH_DESKTOP_WINDOWS_PFX_FILE === undefined ? undefined : thumbprint
+      const inspect: typeof inspectWindowsRuntimeSignature = async (path) => {
+        const signature = await inspectWindowsRuntimeSignature(path)
+        if (untrustedSignerThumbprint !== undefined && signature.status === 'UnknownError'
+          && signature.thumbprint?.toUpperCase() === untrustedSignerThumbprint.toUpperCase()) return { ...signature, status: 'Valid' }
+        return signature
+      }
       const identity = await signatureCacheIdentity([
         await realpath(certificateFile), await realpath(process.env.DSH_DESKTOP_WINDOWS_SIGNTOOL!),
         join(import.meta.dirname, 'windows-sign.cmd'), join(import.meta.dirname, 'windows-sign.mjs'),
@@ -67,10 +75,9 @@ async function main(): Promise<void> {
       ])
       const cacheRoot = resolveWindowsSignatureCacheDirectory(process.env)
       await prepareWindowsSignatureCacheDirectory(cacheRoot)
-      const cachedSign = createCachedSigner({ root: cacheRoot, identity, thumbprint,
-        sign, inspect: inspectWindowsRuntimeSignature, record })
-      const options = { thumbprint, sign: cachedSign, record,
-        cache: { restore: cachedSign.restore, concurrency: signatureCacheConcurrency } }
+      const cachedSign = createCachedSigner({ root: cacheRoot, identity, thumbprint, sign, inspect, record })
+      const options = { thumbprint, ...(untrustedSignerThumbprint === undefined ? {} : { untrustedSignerThumbprint }),
+        sign: cachedSign, record, cache: { restore: cachedSign.restore, concurrency: signatureCacheConcurrency } }
       record({ type: 'signature-cache-open', root: cachedSign.summary().root, identity })
       try {
         if (process.argv.includes('--dsh')) {

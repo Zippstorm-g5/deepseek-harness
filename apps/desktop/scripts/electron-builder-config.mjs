@@ -14,7 +14,7 @@ import {
 import { notarizeMacOSDiskImageArtifact } from './notarize-macos-disk-images.mjs'
 import { verifyMacOSSignatureAfterSign } from './verify-macos-signature.mjs'
 import {
-  createWindowsTokenSigner,
+  createWindowsSigner,
   installWindowsNsisBootstrapSigner,
   resolveWindowsUpdatePublisher,
   scrubWindowsSigningEnvironment,
@@ -33,6 +33,22 @@ import {
   verifyMacOSAppUpdateConfig,
   writeMacOSAppUpdateConfig,
 } from './macos-app-update-config.mjs'
+
+function resolveWindowsPublish(env, packagesWindows) {
+  const provider = env.DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER?.trim() || 'generic'
+  if (!['generic', 'github'].includes(provider)) {
+    throw new Error('desktop package: DSH_DESKTOP_WINDOWS_PUBLISH_PROVIDER must be generic or github')
+  }
+  if (provider !== 'github') return undefined
+  if (!packagesWindows) throw new Error('desktop package: GitHub Releases publishing is Windows-only')
+  const owner = env.DSH_DESKTOP_WINDOWS_GITHUB_OWNER?.trim()
+  const repo = env.DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY?.trim()
+  if (!owner || !repo) throw new Error('desktop package: GitHub publishing requires DSH_DESKTOP_WINDOWS_GITHUB_OWNER and DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY')
+  if (!/^[A-Za-z0-9_.-]+$/u.test(owner) || !/^[A-Za-z0-9_.-]+$/u.test(repo)) {
+    throw new Error('desktop package: GitHub owner and repository contain unsupported characters')
+  }
+  return { provider: 'github', owner, repo, releaseType: 'prerelease', channel: 'nightly' }
+}
 
 /**
  * Create electron-builder configuration from one release environment.
@@ -62,6 +78,7 @@ export function createElectronBuilderConfig(
   if (unsigned && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
+  const windowsPublish = resolveWindowsPublish(env, packagesWindows)
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
@@ -70,17 +87,26 @@ export function createElectronBuilderConfig(
   let dshDestination
   let windowsCode = []
   const unpack = ['**/*.{node,dylib,dll,so,exe}', '**/*.so.*', '**/spawn-helper', '**/@vscode/ripgrep-*/bin/rg',
-    `**/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`]
+    '**/node_modules/@deepseek-ai/libreoffice-kit/**/*',
+    'dsh/node_modules/@deepseek-ai/libreoffice-kit/**/*',
+    `**/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`,
+    `dsh/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`]
+  const windowsPfxThumbprint = packagesWindows && !unsigned && env.DSH_DESKTOP_WINDOWS_PFX_FILE !== undefined
+    ? new X509Certificate(readFileSync(env.DSH_DESKTOP_WINDOWS_CER_FILE)).fingerprint.replaceAll(':', '')
+    : undefined
   const windowsSigner = packagesWindows && !unsigned
-    ? createWindowsTokenSigner({
+    ? createWindowsSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
         signTool: env.DSH_DESKTOP_WINDOWS_SIGNTOOL,
         tokenPin: env.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
         keyContainer: env.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
+        pfxFile: env.DSH_DESKTOP_WINDOWS_PFX_FILE,
+        pfxPassword: env.DSH_DESKTOP_WINDOWS_PFX_PASSWORD,
         preserveSignature: async path => {
           for (const [sourceRoot, destinationRoot] of [[join(buildPaths.runtime, 'primary-runtime'), primaryRuntimeDestination], [buildPaths.dsh, dshDestination]]) {
             if (destinationRoot !== undefined && await preserveWindowsRuntimeSignature(path, {
               sourceRoot, destinationRoot, runDirectory: env.DSH_DESKTOP_PACKAGING_RUN_DIR,
+              ...(windowsPfxThumbprint === undefined ? {} : { untrustedSignerThumbprint: windowsPfxThumbprint }),
             })) return true
           }
           return false
@@ -195,6 +221,7 @@ export function createElectronBuilderConfig(
       if (windowsSigner !== undefined) {
         await signWindowsCode(context.appOutDir, {
           thumbprint: new X509Certificate(await readFile(env.DSH_DESKTOP_WINDOWS_CER_FILE)).fingerprint.replaceAll(':', ''),
+          untrustedSignerThumbprint: windowsPfxThumbprint,
           sign: windowsSigner,
           record: event => recordPackagingEvent(env.DSH_DESKTOP_PACKAGING_RUN_DIR, event),
         })
@@ -242,6 +269,6 @@ export function createElectronBuilderConfig(
       differentialPackage: true,
     },
     detectUpdateChannel: false,
-    publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl, channel: 'nightly' }],
+    publish: update === undefined ? null : [windowsPublish ?? { provider: 'generic', url: update.publicUrl, channel: 'nightly' }],
   }
 }

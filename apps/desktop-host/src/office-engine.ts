@@ -1,8 +1,35 @@
 /** Resolve packaged Office engine manifests from their complete, unpacked resource directories. */
-import { registerHooks, type ModuleHooks } from 'node:module'
 import { realpathSync } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
+import { createRequire, registerHooks, type ModuleHooks } from 'node:module'
+import { basename, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+
+type ResolveFilename = (request: string, parent: object | null, isMain: boolean, options?: object) => string
+
+type NodeModuleApi = { _resolveFilename: ResolveFilename }
+
+const nodeModule = createRequire(import.meta.url)('node:module') as NodeModuleApi
+
+function inside(root: string, path: string): boolean {
+  const suffix = relative(root, path)
+  return suffix !== '..' && suffix !== '' && !suffix.startsWith(`..${sep}`) && !suffix.includes(`:${sep}`)
+}
+
+function isEngineSpecifier(specifier: string): boolean {
+  return /^@deepseek-ai\/libreoffice-kit-(?:darwin|win32|linux)-/u.test(specifier)
+}
+
+function physicalEnginePath(resolvedPath: string, archive: string, root: string): string {
+  const canonical = realpathSync(resolvedPath)
+  if (!inside(root, canonical)) {
+    if (inside(archive, canonical)) {
+      throw new Error(`desktop Office engine resolved outside the runtime package directory: ${resolvedPath}`)
+    }
+    return resolvedPath
+  }
+  const physical = join(`${archive}.unpacked`, relative(archive, root), relative(root, canonical))
+  return realpathSync(physical)
+}
 
 /**
  * Locate the archive containing a packaged runtime.
@@ -22,14 +49,21 @@ export function runtimeArchivePath(runtimeDir: string): string | undefined {
  */
 export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks | undefined {
   if (runtimeArchivePath(runtimeDir) === undefined) return undefined
-  const root = realpathSync(runtimeDir)
-  const archive = dirname(root)
+  const archiveCandidate = dirname(runtimeDir)
+  const archive = basename(archiveCandidate) === 'app.asar' ? archiveCandidate : realpathSync(archiveCandidate)
+  const root = join(archive, basename(runtimeDir))
+  const originalResolveFilename = nodeModule._resolveFilename
+  const resolveFilename: ResolveFilename = (request, parent, isMain, options) => {
+    const resolved = originalResolveFilename(request, parent, isMain, options)
+    return isEngineSpecifier(request) ? physicalEnginePath(resolved, archive, root) : resolved
+  }
+  nodeModule._resolveFilename = resolveFilename
   const source = pathToFileURL(join(root, 'node_modules', '@deepseek-ai', 'libreoffice-kit-')).href
   const destination = pathToFileURL(join(`${archive}.unpacked`, relative(archive, root), 'node_modules', '@deepseek-ai', 'libreoffice-kit-')).href
-  return registerHooks({
+  const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
       const resolved = nextResolve(specifier, context)
-      if (!/^@deepseek-ai\/libreoffice-kit-(?:darwin|win32|linux)-/u.test(specifier)) return resolved
+      if (!isEngineSpecifier(specifier)) return resolved
       const canonical = pathToFileURL(realpathSync(fileURLToPath(resolved.url))).href
       if (!canonical.startsWith(source)) {
         if (canonical.startsWith(pathToFileURL(archive + '/').href)) {
@@ -41,4 +75,10 @@ export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks |
       return { ...resolved, url: pathToFileURL(physical).href }
     },
   })
+  return {
+    deregister() {
+      hooks.deregister()
+      if (nodeModule._resolveFilename === resolveFilename) nodeModule._resolveFilename = originalResolveFilename
+    },
+  }
 }

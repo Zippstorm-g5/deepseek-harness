@@ -1,11 +1,14 @@
 /** Validate the assembled application, including native Office conversion outside ASAR. */
+import { X509Certificate } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { readDesktopRuntime, verifyDesktopRuntime } from '../src/runtime-tree.ts'
-import { verifyWindowsCode } from './windows-runtime-signature.mjs'
+import { inspectWindowsRuntimeSignature, verifyWindowsCode } from './windows-runtime-signature.mjs'
 import { smokePreparedRuntime } from './smoke-prepared-runtime.ts'
 import { resolveDesktopPackageTarget } from './package-target.ts'
+import { withPackagedSmokeApplication } from './packaged-smoke-application.ts'
 
 const paths = resolveDesktopTargetBuildPaths()
 const { values } = parseArgs({ options: { unsigned: { type: 'boolean', default: false } }, allowPositionals: false })
@@ -15,9 +18,20 @@ if (values.unsigned && !windows) throw new Error('desktop smoke: unsigned artifa
 const artifacts = values.unsigned ? paths.unsignedArtifacts : paths.artifacts
 const application = windows ? join(artifacts, 'win-unpacked')
   : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app', 'Contents')
-const resources = join(application, windows ? 'resources' : 'Resources')
-const executable = windows ? join(application, 'DeepSeek Harness.exe') : join(application, 'MacOS', 'DeepSeek Harness')
 const descriptor = await verifyDesktopRuntime(paths.dsh, readDesktopRuntime(paths.dsh).release.version,
   resolveDesktopPackageTarget(target))
-if (windows && !values.unsigned) await verifyWindowsCode(application)
-await smokePreparedRuntime(join(resources, 'app.asar', 'dsh'), executable, join(resources, 'runtime'), descriptor)
+const certificateFile = process.env.DSH_DESKTOP_WINDOWS_CER_FILE
+const untrustedSignerThumbprint = process.env.DSH_DESKTOP_WINDOWS_PFX_FILE === undefined || certificateFile === undefined
+  ? undefined
+  : new X509Certificate(await readFile(certificateFile)).fingerprint.replaceAll(':', '')
+const inspect = untrustedSignerThumbprint === undefined ? undefined : async (path: string) => {
+  const signature = await inspectWindowsRuntimeSignature(path)
+  if (signature.status === 'UnknownError' && signature.thumbprint?.toUpperCase() === untrustedSignerThumbprint) return { ...signature, status: 'Valid' as const }
+  return signature
+}
+if (windows && !values.unsigned) await verifyWindowsCode(application, inspect)
+await withPackagedSmokeApplication(application, windows, async (staged) => {
+  const resources = join(staged, windows ? 'resources' : 'Resources')
+  const executable = windows ? join(staged, 'DeepSeek Harness.exe') : join(staged, 'MacOS', 'DeepSeek Harness')
+  await smokePreparedRuntime(join(resources, 'app.asar', 'dsh'), executable, join(resources, 'runtime'), descriptor)
+})
