@@ -313,7 +313,7 @@ pnpm run package:desktop:win:x64
 
 打包前插入并解锁 Token。electron-builder 钩子把每个产物交给采用 CRLF 的 `scripts/windows-sign.cmd`；该 CMD 只调用一次已配置的 SignTool，并指定 `/f`、SafeNet `/kc "[{{PIN}}]=容器"`、`/csp "eToken Base Cryptographic Provider"`和 SHA-256 文件摘要，不请求时间戳。随后钩子在隔离副本上完成 DigiCert SHA-256 RFC 3161 时间戳，不传递签名凭据。钩子不会改用 electron-builder 内置的 SignTool，也不会重试失败的签名请求。SignTool、证书、容器、PIN、Token 或签名不可用时，Windows 发布打包会失败，不会生成未签名产物。
 
-PFX 打包改用通过校验的 PFX 文件和密码调用 SignTool，然后执行相同的时间戳与签名检查。GitHub Actions 仅在个人测试发布中读取 `DSH_WINDOWS_PFX_BASE64`、`DSH_WINDOWS_CERT_BASE64` 和 `DSH_WINDOWS_PFX_PASSWORD` secrets；缺少这些 secrets 时只生成未签名诊断产物，不发布 Release。每次同步构建使用不可变的日期与运行序号版本；预发布资产包含安装包、blockmap、`nightly.yml` 以及测试客户端必须信任的公开个人测试证书。
+PFX 打包改用通过校验的 PFX 文件和密码调用 SignTool，然后执行相同的时间戳与签名检查。GitHub Actions 不会把自签名证书加入 hosted runner 的信任库，而是校验其密码学签名和精确签名者指纹。GitHub Actions 仅在个人测试发布中读取 `DSH_WINDOWS_PFX_BASE64`、`DSH_WINDOWS_CERT_BASE64` 和 `DSH_WINDOWS_PFX_PASSWORD` secrets；缺少这些 secrets 时只生成未签名诊断产物，不发布 Release。每次同步构建使用不可变的日期与运行序号版本；预发布资产包含安装包、blockmap、`nightly.yml` 以及测试客户端必须信任的公开个人测试证书。
 
 时间戳处理仅对正常退出但返回失败或警告的时间戳命令重试，最多尝试三次，间隔为一秒和两秒。每次均从同一份已验证的主签名开始。启动错误、终止状态不确定或验签失败会立即停止。SignTool 使用短的私有路径；发布时先把已验证字节复制到目标卷，再原子替换。最终必须通过 Windows 信任、证书、时间戳和规范化全文件相等检查。尝试耗尽后停止打包并保留证据，不再次调用硬件。参见[签名完成决策](../../.agents/notes/implemented/process/2026-09-17-windows-signature-completion.zh.md)。
 

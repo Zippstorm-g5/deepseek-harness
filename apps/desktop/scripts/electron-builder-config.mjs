@@ -90,6 +90,9 @@ export function createElectronBuilderConfig(
     'dsh/node_modules/@deepseek-ai/libreoffice-kit/**/*',
     `**/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`,
     `dsh/node_modules/@deepseek-ai/libreoffice-kit-${resolvedPlatform}-${resolvedArch}/**/*`]
+  const windowsPfxThumbprint = packagesWindows && !unsigned && env.DSH_DESKTOP_WINDOWS_PFX_FILE !== undefined
+    ? new X509Certificate(readFileSync(env.DSH_DESKTOP_WINDOWS_CER_FILE)).fingerprint.replaceAll(':', '')
+    : undefined
   const windowsSigner = packagesWindows && !unsigned
     ? createWindowsSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
@@ -211,6 +214,7 @@ export function createElectronBuilderConfig(
       if (windowsSigner !== undefined) {
         await signWindowsCode(context.appOutDir, {
           thumbprint: new X509Certificate(await readFile(env.DSH_DESKTOP_WINDOWS_CER_FILE)).fingerprint.replaceAll(':', ''),
+          untrustedSignerThumbprint: windowsPfxThumbprint,
           sign: windowsSigner,
           record: event => recordPackagingEvent(env.DSH_DESKTOP_PACKAGING_RUN_DIR, event),
         })

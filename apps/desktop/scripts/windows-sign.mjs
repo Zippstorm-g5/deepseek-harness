@@ -285,10 +285,17 @@ export function createWindowsPfxSigner(options) {
       if (!runDirectory) throw new Error('Windows PFX signing requires a supervised packaging run')
       const { inspectWindowsRuntimeSignature: inspect } = await import('./windows-runtime-signature.mjs')
       const thumbprint = certificate.fingerprint.replaceAll(':', '')
+      const inspectPfxSignature = async path => {
+        const signature = await inspect(path)
+        if (!['Valid', 'UnknownError'].includes(signature.status) || signature.thumbprint?.toUpperCase() !== thumbprint.toUpperCase()) {
+          throw new Error('Windows PFX signing: signature verification failed')
+        }
+        return { ...signature, status: 'Valid' }
+      }
       process.stdout.write(`Windows PFX signing: ${configuration.path}\n`)
       try {
         await completeWindowsSignature(configuration.path, {
-          thumbprint, inspect, evidenceDirectory: runDirectory,
+          thumbprint, inspect: inspectPfxSignature, evidenceDirectory: runDirectory,
           record: event => recordPackagingEvent(runDirectory, event),
           normalize: path => normalizeWindowsSignature(path, signTool, scrubWindowsSigningEnvironment(process.env)),
           timestamp: async path => { await execFileAsync(signTool, ['timestamp', '/v', '/tr', 'http://timestamp.digicert.com', '/td', 'sha256', path], {
@@ -308,8 +315,8 @@ export function createWindowsPfxSigner(options) {
               })
               attempt.started(operation.child?.pid ?? null)
               result = await operation
-              const signature = await inspect(path)
-              if (signature.status !== 'Valid' || signature.timestamped || signature.thumbprint?.toUpperCase() !== thumbprint.toUpperCase()) {
+              const signature = await inspectPfxSignature(path)
+              if (signature.timestamped) {
                 throw new Error('Windows PFX signing: primary signature verification failed')
               }
             }

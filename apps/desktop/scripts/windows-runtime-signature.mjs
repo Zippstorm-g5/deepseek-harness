@@ -105,6 +105,10 @@ async function inspectWindowsCode(files, inspect) {
  */
 export async function signWindowsCode(root, options) {
   const inspect = options.inspect ?? inspectWindowsRuntimeSignature
+  const expectedUntrustedSigner = options.untrustedSignerThumbprint?.toUpperCase()
+  const acceptsSignature = signature => signature.status === 'Valid'
+    || signature.status === 'UnknownError' && expectedUntrustedSigner !== undefined
+      && signature.thumbprint?.toUpperCase() === expectedUntrustedSigner
   const files = await windowsRuntimeCode(root)
   if (files.length === 0) throw new Error('Windows code: no Windows code found')
   const unsigned = []
@@ -113,12 +117,12 @@ export async function signWindowsCode(root, options) {
     const signature = signatures[index]
     options.record({ type: 'windows-code-signature', path, ...signature })
     if (signature.status === 'NotSigned') unsigned.push(path)
-    else if (signature.status !== 'Valid') throw new Error(`Windows code: refusing ${signature.status} signature: ${path}`)
+    else if (!acceptsSignature(signature)) throw new Error(`Windows code: refusing ${signature.status} signature: ${path}`)
   }
   options.record({ type: 'windows-code-signing-plan', files: files.length, unsigned: unsigned.length })
   async function verifySigned(path) {
     const signature = await inspect(path)
-    if (signature.status !== 'Valid' || !signature.timestamped || signature.thumbprint?.toUpperCase() !== options.thumbprint.toUpperCase()) {
+    if (!acceptsSignature(signature) || !signature.timestamped || signature.thumbprint?.toUpperCase() !== options.thumbprint.toUpperCase()) {
       throw new Error(`Windows code: signing verification failed: ${path}`)
     }
     options.record({ type: 'windows-code-signature-verified', path, ...signature })

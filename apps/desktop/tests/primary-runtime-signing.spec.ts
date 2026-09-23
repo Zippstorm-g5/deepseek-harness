@@ -158,6 +158,15 @@ it.each(['HashMismatch', 'NotTrusted', 'UnknownError'])('rejects existing %s sig
   expect(smoke).not.toHaveBeenCalled()
 })
 
+it('accepts an untrusted self-signed PFX only when its signer thumbprint matches', async () => {
+  const root = await fixture(['application.exe'])
+  let signed = false
+  const sign = vi.fn(async () => { signed = true })
+  await signWindowsCode(root, { thumbprint, untrustedSignerThumbprint: thumbprint, sign, record: () => {},
+    inspect: async () => signed ? { ...valid, status: 'UnknownError' } : unsigned })
+  expect(sign).toHaveBeenCalledOnce()
+})
+
 it('stops immediately on signer failure without retrying, signing another file or executing it', async () => {
   const root = await fixture()
   const sign = vi.fn(async () => { throw new Error('token refused') })

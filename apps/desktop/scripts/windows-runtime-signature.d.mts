@@ -28,6 +28,8 @@ export function preserveWindowsRuntimeSignature(path: string, options: {
 /** Supervised signing dependencies shared by all Windows release trees. */
 export interface WindowsCodeSigningOptions {
   thumbprint: string
+  /** Self-signed PFX signer permitted to report an untrusted certificate only when this exact thumbprint matches. */
+  untrustedSignerThumbprint?: string
   sign: ReturnType<typeof import('./windows-sign.mjs').createWindowsTokenSigner>
   inspect?: typeof inspectWindowsRuntimeSignature
   record: (event: object) => void
