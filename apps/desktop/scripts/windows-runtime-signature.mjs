@@ -31,7 +31,7 @@ export async function inspectWindowsRuntimeSignature(path) {
 /**
  * Preserve a copied runtime executable only after signature and exact-byte verification.
  * @param {string} path Signing-hook target.
- * @param {{sourceRoot: string, destinationRoot: string, runDirectory: string, inspect?: typeof inspectWindowsRuntimeSignature}} options Prepared and copied runtime roots with retained audit directory.
+ * @param {{sourceRoot: string, destinationRoot: string, runDirectory: string, untrustedSignerThumbprint?: string, inspect?: typeof inspectWindowsRuntimeSignature}} options Prepared and copied runtime roots with retained audit directory.
  * @returns {Promise<boolean>} True for a verified runtime copy; false for targets outside that directory.
  */
 export async function preserveWindowsRuntimeSignature(path, options) {
@@ -44,7 +44,9 @@ export async function preserveWindowsRuntimeSignature(path, options) {
   const [prepared, copied] = await Promise.all([readFile(source), readFile(path)])
   if (!prepared.equals(copied)) throw new Error(`Windows code: copied executable changed: ${path}`)
   const signature = await (options.inspect ?? inspectWindowsRuntimeSignature)(path)
-  if (signature.status !== 'Valid') throw new Error(`Windows code: copied signature is ${signature.status}: ${path}`)
+  const expectedUntrustedSigner = options.untrustedSignerThumbprint?.toUpperCase()
+  if (signature.status !== 'Valid' && !(signature.status === 'UnknownError' && expectedUntrustedSigner !== undefined
+    && signature.thumbprint?.toUpperCase() === expectedUntrustedSigner)) throw new Error(`Windows code: copied signature is ${signature.status}: ${path}`)
   recordPackagingEvent(options.runDirectory, { type: 'primary-runtime-copy-verified', path, ...signature })
   return true
 }

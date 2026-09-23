@@ -231,6 +231,8 @@ it('preserves only identical, valid runtime copies and records verification with
   expect(inspect).not.toHaveBeenCalled()
   expect(await preserveWindowsRuntimeSignature(path, options)).toBe(true)
   expect(await readFile(join(run.directory, 'events.jsonl'), 'utf8')).toContain('primary-runtime-copy-verified')
+  inspect.mockResolvedValueOnce({ ...valid, status: 'UnknownError' })
+  expect(await preserveWindowsRuntimeSignature(path, { ...options, untrustedSignerThumbprint: thumbprint })).toBe(true)
   inspect.mockResolvedValueOnce({ ...valid, status: 'NotSigned' })
   await expect(preserveWindowsRuntimeSignature(path, options)).rejects.toThrow('copied signature is NotSigned')
   await writeFile(path, 'changed executable')

@@ -105,6 +105,7 @@ export function createElectronBuilderConfig(
           for (const [sourceRoot, destinationRoot] of [[join(buildPaths.runtime, 'primary-runtime'), primaryRuntimeDestination], [buildPaths.dsh, dshDestination]]) {
             if (destinationRoot !== undefined && await preserveWindowsRuntimeSignature(path, {
               sourceRoot, destinationRoot, runDirectory: env.DSH_DESKTOP_PACKAGING_RUN_DIR,
+              ...(windowsPfxThumbprint === undefined ? {} : { untrustedSignerThumbprint: windowsPfxThumbprint }),
             })) return true
           }
           return false
