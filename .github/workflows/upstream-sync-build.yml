@@ -279,7 +279,7 @@ jobs:
 
       - name: Download signed desktop artifact
         if: env.WINDOWS_PFX_BASE64 != '' && env.WINDOWS_CERT_BASE64 != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: deepseek-harness-win-x64-${{ needs.sync.outputs.upstream_sha }}
           path: release-input
