@@ -76,8 +76,8 @@ async function main(): Promise<void> {
       const cacheRoot = resolveWindowsSignatureCacheDirectory(process.env)
       await prepareWindowsSignatureCacheDirectory(cacheRoot)
       const cachedSign = createCachedSigner({ root: cacheRoot, identity, thumbprint, sign, inspect, record })
-      const options = { thumbprint, untrustedSignerThumbprint, sign: cachedSign, record,
-        cache: { restore: cachedSign.restore, concurrency: signatureCacheConcurrency } }
+      const options = { thumbprint, ...(untrustedSignerThumbprint === undefined ? {} : { untrustedSignerThumbprint }),
+        sign: cachedSign, record, cache: { restore: cachedSign.restore, concurrency: signatureCacheConcurrency } }
       record({ type: 'signature-cache-open', root: cachedSign.summary().root, identity })
       try {
         if (process.argv.includes('--dsh')) {
