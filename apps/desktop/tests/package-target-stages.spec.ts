@@ -68,6 +68,16 @@ it('requires one signing preflight before building, then records only the comple
   expect(record.publicUrl).toBe('https://updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/feeds/win-x64/')
 })
 
+it('forwards PFX credentials to the isolated signing preflight', async () => {
+  const { run } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['win-x64'], 'win32', 'x64'), {
+    ...environment, DSH_DESKTOP_WINDOWS_PFX_FILE: 'C:\\fixture\\test.pfx', DSH_DESKTOP_WINDOWS_PFX_PASSWORD: 'fixture-password',
+  }, run)
+  expect(run.run.mock.calls[0]![3].env).toMatchObject({
+    DSH_DESKTOP_WINDOWS_PFX_FILE: 'C:\\fixture\\test.pfx', DSH_DESKTOP_WINDOWS_PFX_PASSWORD: 'fixture-password',
+  })
+})
+
 it('initializes shared storage only after acquiring the preflight stage lock', async () => {
   const { run } = supervisor()
   vi.mocked(withWindowsSigningStage).mockImplementationOnce(async (_options, operation) => {
