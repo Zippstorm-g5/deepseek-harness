@@ -163,12 +163,7 @@ jobs:
           WINDOWS_CERT_BASE64: ${{ secrets.DSH_WINDOWS_CERT_BASE64 }}
           WINDOWS_PFX_PASSWORD: ${{ secrets.DSH_WINDOWS_PFX_PASSWORD }}
         run: |
-          $workspaceDrive = 'R:'
-           subst $workspaceDrive $env:GITHUB_WORKSPACE
-           if ($LASTEXITCODE -ne 0) { throw "failed to map $env:GITHUB_WORKSPACE to $workspaceDrive" }
-           try {
-             Set-Location "$workspaceDrive\"
-             $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
+          $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
           $common = @(
             'DSH_DESKTOP_APP_ID=com.deepseek.harness',
             'DSH_DESKTOP_AUTO_UPDATE_ENV=test',
@@ -201,48 +196,7 @@ jobs:
           else {
             $common | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
             pnpm run package:desktop:win:x64:unsigned
-           }
-           }
-           finally {
-             Set-Location $env:GITHUB_WORKSPACE
-             subst $workspaceDrive /d | Out-Null
-           }
-
-
-      - name: Diagnose packaged LibreOffice helper
-        if: always()
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $root = Join-Path $PWD 'apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/win-unpacked'
-          $engine = Join-Path $root 'resources/app.asar.unpacked/dsh/node_modules/@deepseek-ai/libreoffice-kit-win32-x64'
-          $helper = Join-Path $engine 'bin/libreoffice-kit.exe'
-          $program = Join-Path $engine 'program/program'
-          $inputDir = Join-Path $env:RUNNER_TEMP 'dsh-office-helper-input'
-          $diagnostic = Join-Path $PWD 'apps/desktop/.desktop-build/packaging-runs/packaged-office-helper'
-          New-Item -ItemType Directory -Force -Path $diagnostic | Out-Null
-          if (-not (Test-Path -LiteralPath $helper)) {
-            'packaged LibreOffice helper was not assembled' | Set-Content (Join-Path $diagnostic 'result.txt')
-            exit 0
           }
-          New-Item -ItemType Directory -Force -Path $inputDir | Out-Null
-          $python = Join-Path $PWD 'apps/desktop/.desktop-build/targets/win-x64/runtime/primary-runtime/dependencies/python/python.exe'
-          if (-not (Test-Path -LiteralPath $python)) {
-            'packaged Python runtime was not assembled' | Set-Content (Join-Path $diagnostic 'result.txt')
-            exit 0
-          }
-          & $python apps/desktop/tests/fixtures/office-conversion-inputs.py $inputDir
-          $profile = Join-Path $diagnostic 'profile'
-           New-Item -ItemType Directory -Force -Path $profile | Out-Null
-          $output = Join-Path $diagnostic 'converted.pdf'
-          $stdout = Join-Path $diagnostic 'stdout.log'
-          $stderr = Join-Path $diagnostic 'stderr.log'
-          $arguments = @('--program-directory', $program, '--input-path', (Join-Path $inputDir 'input.docx'),
-            '--output-path', $output, '--profile-directory', $profile, '--max-output-bytes', '67108864',
-            '--max-image-resolution', '50000000')
-          $process = Start-Process -FilePath $helper -ArgumentList $arguments -WorkingDirectory $program -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
-          "exit=$($process.ExitCode)" | Set-Content (Join-Path $diagnostic 'result.txt')
-          Get-Content $stdout, $stderr -ErrorAction SilentlyContinue | Add-Content (Join-Path $diagnostic 'result.txt')
 
       - name: Upload packaging diagnostics
         if: always()
