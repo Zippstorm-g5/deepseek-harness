@@ -110,6 +110,8 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+    outputs:
+      build_version: ${{ steps.version.outputs.build_version }}
     steps:
       - name: Check out synchronized upstream
         uses: actions/checkout@v6
@@ -118,6 +120,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           clean: true
+
+      - name: Resolve immutable nightly version
+        id: version
+        shell: pwsh
+        env:
+          RUN_SEQUENCE: ${{ github.run_number }}
+        run: |
+          $product = (Get-Content -Raw apps/desktop/package.json | ConvertFrom-Json).version
+          $date = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
+          $version = if ($product.Contains('-')) { "$product.$date.$env:RUN_SEQUENCE" } else { "$product-test.$date.$env:RUN_SEQUENCE" }
+          "build_version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Windows nightly version: $version"
 
       - name: Configure runner-private caches
         shell: pwsh
@@ -162,6 +176,7 @@ jobs:
           WINDOWS_PFX_BASE64: ${{ secrets.DSH_WINDOWS_PFX_BASE64 }}
           WINDOWS_CERT_BASE64: ${{ secrets.DSH_WINDOWS_CERT_BASE64 }}
           WINDOWS_PFX_PASSWORD: ${{ secrets.DSH_WINDOWS_PFX_PASSWORD }}
+          BUILD_VERSION: ${{ steps.version.outputs.build_version }}
         run: |
           $hasPfx = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64)
           $common = @(
@@ -178,6 +193,8 @@ jobs:
             $cer = Join-Path $env:RUNNER_TEMP 'dsh-windows-signing.cer'
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
             [IO.File]::WriteAllBytes($cer, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+            Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+            Import-Certificate -FilePath $cer -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
             $password = $env:WINDOWS_PFX_PASSWORD.Replace("'", "''")
             $signTool = (Get-ChildItem -Path "${env:ProgramFiles(x86)}\\Windows Kits\\10\\bin\\*\\x64\\signtool.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
             if ([string]::IsNullOrWhiteSpace($signTool)) { throw 'Windows SDK SignTool was not found' }
@@ -191,11 +208,11 @@ jobs:
               'DSH_DESKTOP_WINDOWS_GITHUB_REPOSITORY=deepseek-harness'
             )
             $settings | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
-            pnpm run package:desktop:win:x64
+            pnpm run package:desktop:win:x64 -- --build-version $env:BUILD_VERSION
           }
           else {
             $common | Set-Content -LiteralPath apps/desktop/.env.windows -Encoding utf8
-            pnpm run package:desktop:win:x64:unsigned
+            pnpm run package:desktop:win:x64:unsigned -- --build-version $env:BUILD_VERSION
           }
 
       - name: Upload packaging diagnostics
@@ -260,14 +277,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = (Get-Content -Raw apps/desktop/package.json | ConvertFrom-Json).version
+          $version = '${{ needs.build.outputs.build_version }}'
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'Build job did not report the nightly version' }
           $tag = "nightly-v$version"
           $repo = 'Zippstorm-g5/deepseek-harness'
           gh release view $tag --repo $repo *> $null
           if ($LASTEXITCODE -eq 0) { throw "GitHub Release $tag already exists; refusing to overwrite the official version" }
           $root = Join-Path $pwd 'release-input/artifacts'
           if (-not (Test-Path $root)) { throw 'Signed artifact directory was not produced' }
-          $assets = Get-ChildItem -LiteralPath $root -File | Where-Object { $_.Extension -in @('.exe', '.blockmap', '.yml', '.yaml') }
-          if ($assets.Count -eq 0) { throw 'No installer, blockmap, or update metadata was produced' }
+          $certificate = Join-Path $root 'deepseek-harness-personal-test-signing.cer'
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $assets = Get-ChildItem -LiteralPath $root -File | Where-Object { $_.Extension -in @('.exe', '.blockmap', '.yml', '.yaml', '.cer') }
+          if ($assets.Count -eq 0) { throw 'No installer, blockmap, update metadata, or public certificate was produced' }
           if (-not ($assets.Name -contains 'nightly.yml')) { throw 'nightly.yml was not produced by electron-builder' }
-          gh release create $tag --repo $repo --target upstream-build --prerelease --title "DeepSeek Harness $version" --notes "Automated Windows nightly built from upstream ${{ needs.sync.outputs.upstream_sha }}" @($assets.FullName)
+          $notes = "Automated Windows nightly built from upstream ${{ needs.sync.outputs.upstream_sha }}. This personal test build uses a self-signed certificate; install deepseek-harness-personal-test-signing.cer into Trusted Root Certification Authorities and Trusted Publishers before installing or updating."
+          gh release create $tag --repo $repo --target upstream-build --prerelease --title "DeepSeek Harness $version" --notes $notes @($assets.FullName)
