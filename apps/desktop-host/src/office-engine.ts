@@ -22,8 +22,9 @@ export function runtimeArchivePath(runtimeDir: string): string | undefined {
  */
 export function installOfficeEngineResolution(runtimeDir: string): ModuleHooks | undefined {
   if (runtimeArchivePath(runtimeDir) === undefined) return undefined
-  const root = realpathSync(runtimeDir)
-  const archive = dirname(root)
+  const archiveCandidate = dirname(runtimeDir)
+  const archive = basename(archiveCandidate) === 'app.asar' ? archiveCandidate : realpathSync(archiveCandidate)
+  const root = join(archive, basename(runtimeDir))
   const source = pathToFileURL(join(root, 'node_modules', '@deepseek-ai', 'libreoffice-kit-')).href
   const destination = pathToFileURL(join(`${archive}.unpacked`, relative(archive, root), 'node_modules', '@deepseek-ai', 'libreoffice-kit-')).href
   return registerHooks({
