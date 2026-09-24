@@ -2,6 +2,10 @@
 !include "FileFunc.nsh"
 !define INSTALLER_SOURCE_DIR "${__FILEDIR__}\..\installer"
 !define /ifndef INSTALLER_BUILD_DIR "${__FILEDIR__}\..\.desktop-build\targets\win-x64\installer-ui"
+; electron-updater starts the NSIS process before it asks Electron to quit. Keep the updater installer alive
+; long enough for the shell, renderers, and utility processes using the installed executable to exit.
+!define /ifndef DSH_INSTALLER_UPDATED_WAIT_ATTEMPTS 480
+!define /ifndef DSH_INSTALLER_UPDATED_WAIT_DELAY_MS 250
 
 ManifestDPIAware true
 !ifndef BUILD_UNINSTALLER
@@ -132,6 +136,51 @@ ManifestDPIAware true
   !define DSH_INSTALLER_LOG_DIR "$LOCALAPPDATA\${DSH_UPDATER_CACHE_NAME}\installer-logs"
 !endif
 
+; A silent updater cannot show the running-application prompt. Preserve the failed handoff facts outside
+; $PLUGINSDIR so a later diagnostic can distinguish a slow shutdown from extraction or replacement failure.
+!macro InstallerReportUpdateHandoffFailure Reason
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  Push $R2
+  StrCpy $R2 0
+  ${If} ${Errors}
+    StrCpy $R2 1
+  ${EndIf}
+  ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
+  CreateDirectory "${DSH_INSTALLER_LOG_DIR}"
+  StrCpy $0 "${DSH_INSTALLER_LOG_DIR}\update-wait-failure-$2$1$0-$4$5$6.log"
+  ClearErrors
+  FileOpen $1 "$0" w
+  ${IfNot} ${Errors}
+    FileWrite $1 "reason=${Reason}$\r$\n"
+    FileWrite $1 "updated=true$\r$\n"
+    FileWrite $1 "installDirectory=$INSTDIR$\r$\n"
+    FileWrite $1 "processQueryResult=$R0$\r$\n"
+    FileWrite $1 "waitAttempts=$R1$\r$\n"
+    FileWrite $1 "waitDelayMilliseconds=${DSH_INSTALLER_UPDATED_WAIT_DELAY_MS}$\r$\n"
+    FileClose $1
+    DetailPrint "$0"
+  ${EndIf}
+  ${If} $R2 == 1
+    SetErrors
+  ${Else}
+    ClearErrors
+  ${EndIf}
+  Pop $R2
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
 !macro customInstallerExtractFailed Archive
   Push $0
   Push $1
@@ -165,26 +214,34 @@ ManifestDPIAware true
     InitPluginsDir
     File "/oname=$PLUGINSDIR\window-frame.dll" "${INSTALLER_BUILD_DIR}\window-frame.dll"
   !endif
+  ${If} ${isUpdated}
+    StrCpy $R1 0
+  ${EndIf}
   System::Call '$PLUGINSDIR\window-frame.dll::InstallerFindProcess(w "$INSTDIR\${APP_EXECUTABLE_FILENAME}") i.R0 ?c'
   ${If} $R0 == 0
     ${If} ${isUpdated}
-      StrCpy $R1 0
       ${DoWhile} $R0 == 0
-        Sleep 250
+        Sleep ${DSH_INSTALLER_UPDATED_WAIT_DELAY_MS}
         System::Call '$PLUGINSDIR\window-frame.dll::InstallerFindProcess(w "$INSTDIR\${APP_EXECUTABLE_FILENAME}") i.R0 ?c'
         IntOp $R1 $R1 + 1
-        ${If} $R1 >= 40
+        ${If} $R1 >= ${DSH_INSTALLER_UPDATED_WAIT_ATTEMPTS}
           ${ExitDo}
         ${EndIf}
       ${Loop}
     ${EndIf}
     ${If} $R0 == 0
+      ${If} ${isUpdated}
+        !insertmacro InstallerReportUpdateHandoffFailure "installed application did not exit before the updater deadline"
+      ${EndIf}
       MessageBox MB_OK|MB_ICONINFORMATION "$(INSTALLER_RUNNING)" /SD IDOK
       SetErrorLevel 2
       Quit
     ${EndIf}
   ${EndIf}
   ${If} $R0 < 0
+    ${If} ${isUpdated}
+      !insertmacro InstallerReportUpdateHandoffFailure "installed application process query failed"
+    ${EndIf}
     MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_UI_ERROR)" /SD IDOK
     SetErrorLevel 2
     Quit

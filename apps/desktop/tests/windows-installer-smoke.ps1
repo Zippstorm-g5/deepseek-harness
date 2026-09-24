@@ -209,6 +209,18 @@ try {
     if (-not $app.WaitForExit(10000)) { throw 'Test application did not exit' }
     $results.Add('running-app-preserved-and-native-progress-hidden')
 
+    $app = Start-Process -FilePath $appPath -PassThru -WindowStyle Hidden
+    $processes.Add($app)
+    [void](Wait-Control $app 'Installer test application is running.' -Dialog)
+    $updateProcess = Start-Process -FilePath $Installer -ArgumentList '/S --updated' -PassThru -WindowStyle Hidden
+    $processes.Add($updateProcess)
+    Start-Sleep -Seconds 11
+    if ($updateProcess.HasExited) { throw "Silent update ended before the delayed application shutdown: $($updateProcess.ExitCode)" }
+    Dismiss $app 'Installer test application is running.'
+    if (-not $app.WaitForExit(10000)) { throw 'Delayed test application did not exit' }
+    if (-not $updateProcess.WaitForExit(60000) -or $updateProcess.ExitCode -ne 0) { throw 'Silent update did not complete after delayed application shutdown' }
+    $results.Add('silent-update-waits-for-delayed-application-shutdown')
+
     $otherPath = Join-Path $OutputDirectory 'Other Installation'
     New-Item -ItemType Directory -Path $otherPath | Out-Null
     $otherApp = Join-Path $otherPath ($ProductName + '.exe')
