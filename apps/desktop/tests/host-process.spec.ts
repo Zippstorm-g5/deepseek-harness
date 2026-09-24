@@ -96,6 +96,19 @@ describe('desktop host process', () => {
     await expect(host.stop()).resolves.toBeUndefined()
   })
 
+  it('allows an acknowledged update shutdown to outlive ordinary teardown', { timeout: 15_000 }, async () => {
+    const host = hostProcess(projectWithHost(`
+      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/' })
+      process.on('message', message => {
+        if (message.type !== 'shutdown') return
+        process.send({ type: 'shutdown-complete' })
+        setTimeout(() => process.disconnect(), 11_000)
+      })
+    `))
+    await host.start()
+    await expect(host.stop(true)).resolves.toBeUndefined()
+  })
+
   it('returns the Web authentication URL and waits for graceful shutdown', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()
