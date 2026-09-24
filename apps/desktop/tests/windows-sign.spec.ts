@@ -9,6 +9,8 @@ import { createPackagingRun } from '../scripts/packaging-run.mjs'
 import {
   buildWindowsSigningEnvironment,
   createRedactedWindowsSigningError,
+  createWindowsPfxSigner,
+  createWindowsSigner,
   createWindowsTokenSigner,
   installWindowsNsisBootstrapSigner,
   repairDanglingAuthenticodeDirectory,
@@ -47,7 +49,32 @@ vi.mock('node:crypto', async importOriginal => ({
 const CERTIFICATE_FILE = 'C:\\release\\server.cer'
 const SIGN_SCRIPT = resolve(import.meta.dirname, '../scripts/windows-sign.cmd')
 
-describe('Windows token signing', () => {
+describe('Windows signing', () => {
+  it('selects the PFX signer without requiring a hardware-token identity', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-pfx-sign-'))
+    const certificateFile = join(root, 'server.cer')
+    const pfxFile = join(root, 'server.pfx')
+    const signTool = join(root, 'signtool.exe')
+    await writeFile(certificateFile, 'code-signing-certificate-fixture')
+    await writeFile(pfxFile, 'pfx-fixture')
+    await writeFile(signTool, 'fixture')
+    expect(createWindowsSigner({ certificateFile, pfxFile, pfxPassword: '', signTool })).toBeTypeOf('function')
+    expect(createWindowsPfxSigner({ certificateFile, pfxFile, pfxPassword: '', signTool })).toBeTypeOf('function')
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('requires an explicit PFX password value', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-pfx-sign-'))
+    const certificateFile = join(root, 'server.cer')
+    const pfxFile = join(root, 'server.pfx')
+    const signTool = join(root, 'signtool.exe')
+    await writeFile(certificateFile, 'code-signing-certificate-fixture')
+    await writeFile(pfxFile, 'pfx-fixture')
+    await writeFile(signTool, 'fixture')
+    expect(() => createWindowsPfxSigner({ certificateFile, pfxFile, signTool })).toThrow(/PFX_PASSWORD/u)
+    await rm(root, { recursive: true, force: true })
+  })
+
   it.each(['invalid-primary', 'timestamp-exhausted', 'timestamp-recovered', 'normalization-corrupt'] as const)(
     'keeps hardware protection separate from %s', async (mode) => {
       const root = await mkdtemp(join(tmpdir(), 'dsh-sign-completion-'))

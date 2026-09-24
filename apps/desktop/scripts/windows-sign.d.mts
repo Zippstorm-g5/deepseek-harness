@@ -45,6 +45,48 @@ export function createWindowsTokenSigner(options: {
 ) => Promise<void>
 
 /**
+ * Serialize software PFX signing for personal or isolated test releases.
+ *
+ * @param options Public certificate, private PFX, and supervised run settings.
+ * @returns The signing hook.
+ */
+export function createWindowsPfxSigner(options: {
+  certificateFile?: string | undefined
+  pfxFile?: string | undefined
+  pfxPassword?: string | undefined
+  signTool?: string | undefined
+  runDirectory?: string | undefined
+  stateDirectory?: string | undefined
+  preserveSignature?: (path: string) => Promise<boolean>
+}): (
+  configuration: {
+    path: string
+    hash: string
+    isNest: boolean
+  },
+) => Promise<void>
+
+/** Select PFX signing when configured, otherwise use the SafeNet signer. */
+export function createWindowsSigner(options: {
+  certificateFile?: string | undefined
+  pfxFile?: string | undefined
+  pfxPassword?: string | undefined
+  signTool?: string | undefined
+  tokenPin?: string | undefined
+  keyContainer?: string | undefined
+  commandInterpreter?: string | undefined
+  runDirectory?: string | undefined
+  stateDirectory?: string | undefined
+  preserveSignature?: (path: string) => Promise<boolean>
+}): (
+  configuration: {
+    path: string
+    hash: string
+    isNest: boolean
+  },
+) => Promise<void>
+
+/**
  * Remove inherited credentials before starting a signing-related subprocess.
  *
  * @param environment Parent environment.

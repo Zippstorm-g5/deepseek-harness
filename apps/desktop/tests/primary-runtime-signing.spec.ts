@@ -158,6 +158,15 @@ it.each(['HashMismatch', 'NotTrusted', 'UnknownError'])('rejects existing %s sig
   expect(smoke).not.toHaveBeenCalled()
 })
 
+it('accepts an untrusted self-signed PFX only when its signer thumbprint matches', async () => {
+  const root = await fixture(['application.exe'])
+  let signed = false
+  const sign = vi.fn(async () => { signed = true })
+  await signWindowsCode(root, { thumbprint, untrustedSignerThumbprint: thumbprint, sign, record: () => {},
+    inspect: async () => signed ? { ...valid, status: 'UnknownError' } : unsigned })
+  expect(sign).toHaveBeenCalledOnce()
+})
+
 it('stops immediately on signer failure without retrying, signing another file or executing it', async () => {
   const root = await fixture()
   const sign = vi.fn(async () => { throw new Error('token refused') })
@@ -222,6 +231,8 @@ it('preserves only identical, valid runtime copies and records verification with
   expect(inspect).not.toHaveBeenCalled()
   expect(await preserveWindowsRuntimeSignature(path, options)).toBe(true)
   expect(await readFile(join(run.directory, 'events.jsonl'), 'utf8')).toContain('primary-runtime-copy-verified')
+  inspect.mockResolvedValueOnce({ ...valid, status: 'UnknownError' })
+  expect(await preserveWindowsRuntimeSignature(path, { ...options, untrustedSignerThumbprint: thumbprint })).toBe(true)
   inspect.mockResolvedValueOnce({ ...valid, status: 'NotSigned' })
   await expect(preserveWindowsRuntimeSignature(path, options)).rejects.toThrow('copied signature is NotSigned')
   await writeFile(path, 'changed executable')
