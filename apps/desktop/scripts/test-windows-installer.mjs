@@ -106,7 +106,7 @@ SectionEnd
     await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
       config: { ...config, productName, extraMetadata: { ...config.extraMetadata, name: packageName },
         artifactName: 'installer-test.exe', directories: { output: languageOutput },
-        nsis: { ...config.nsis, guid, include, installerLanguages: [language] }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
+        nsis: { ...config.nsis, guid, include, installerLanguages: [language], installerSidebar: join(output, 'ui', 'uninstaller-sidebar.bmp'), uninstallerSidebar: join(output, 'ui', 'uninstaller-sidebar.bmp') }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
     })
     if (process.argv.includes('--compile-only')) continue
     const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',

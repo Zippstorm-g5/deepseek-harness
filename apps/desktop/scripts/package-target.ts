@@ -27,15 +27,17 @@ import { withMacOSNotarizationProxy } from './macos-notarization-proxy.ts'
 
 const APP_ROOT = resolve(import.meta.dirname, '..')
 const REPOSITORY_ROOT = resolve(APP_ROOT, '..', '..')
-const WINDOWS_SIGNING_ENV_PREFIX = 'DSH_DESKTOP_WINDOWS_'
 const WINDOWS_SIGNING_ENV_NAMES = [
   'DSH_DESKTOP_WINDOWS_CER_FILE',
   'DSH_DESKTOP_WINDOWS_KEY_CONTAINER',
   'DSH_DESKTOP_WINDOWS_SIGNTOOL',
   'DSH_DESKTOP_WINDOWS_TOKEN_PIN',
+  'DSH_DESKTOP_WINDOWS_PFX_FILE',
+  'DSH_DESKTOP_WINDOWS_PFX_PASSWORD',
   'DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR',
   'DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY',
 ] as const
+const WINDOWS_SIGNING_ENV_NAME_SET = new Set<string>(WINDOWS_SIGNING_ENV_NAMES)
 const DESKTOP_UPLOAD_CREDENTIAL_ENV_NAMES = new Set([
   'DOWNLOAD_TEST_COS_SECRET_ID',
   'DOWNLOAD_TEST_COS_SECRET_KEY',
@@ -89,7 +91,7 @@ const TARGETS: Record<DesktopPackageTargetName, DesktopPackageTarget> = {
  */
 export function withoutWindowsSigningEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(environment)
-    .filter(([name]) => !name.startsWith(WINDOWS_SIGNING_ENV_PREFIX)))
+    .filter(([name]) => !WINDOWS_SIGNING_ENV_NAME_SET.has(name)))
 }
 
 /**
@@ -494,7 +496,10 @@ export async function packageTarget(
       () => notarizeMacOS({ appPath, ...resolveMacOSNotarizationEnvironment(environment) }), undefined, undefined, proxyEvent)
   } else {
     await signedStage('artifacts', () => execute(desktopElectronBuilderArguments(target, invocation.directory), electronBuilderEnv))
-    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(invocation.unsigned ? ['--unsigned'] : [])], targetEnv)
+    const packagedSmokeEnvironment = !invocation.unsigned && environment.DSH_DESKTOP_WINDOWS_PFX_FILE !== undefined
+      ? { ...targetEnv, DSH_DESKTOP_WINDOWS_CER_FILE: environment.DSH_DESKTOP_WINDOWS_CER_FILE, DSH_DESKTOP_WINDOWS_PFX_FILE: '' }
+      : targetEnv
+    await execute(['exec', 'tsx', 'scripts/smoke-packaged-runtime.ts', ...(invocation.unsigned ? ['--unsigned'] : [])], packagedSmokeEnvironment)
   }
   if (!invocation.directory && !invocation.unsigned) writeReleaseRecord(target, electronBuilderEnv, buildPaths.artifacts)
   if (journal) recordPackagingEvent(journal, { type: 'artifacts', directory: buildPaths.artifacts })
