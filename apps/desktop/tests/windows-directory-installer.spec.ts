@@ -43,6 +43,13 @@ it('stops the application before retiring its launch path and promotes before re
   expect(result).not.toContain('File /oname=uninstallerIcon.ico')
 })
 
+it('derives release diagnostic storage from electron-builder updater metadata', () => {
+  const installer = readFileSync(join(import.meta.dirname, '..', 'scripts', 'installer.nsh'), 'utf8')
+  expect(installer).toContain('StrCpy ${Output} "$LOCALAPPDATA\\${APP_INSTALLER_STORE_FILE}"')
+  expect(installer).toContain('${GetParent} "${Output}" ${Output}')
+  expect(installer).not.toContain('$LOCALAPPDATA\\${DSH_UPDATER_CACHE_NAME}\\installer-logs')
+})
+
 it.each(['!include installer.nsh', '!endif\n\nVar /GLOBAL keepShortcuts', '!insertmacro installApplicationFiles'])(
   'rejects a missing or duplicate upstream insertion point: %s', (point) => {
     expect(() => directoryInstallSection(section.replace(point, ''))).toThrow('Desktop NSIS template changed')

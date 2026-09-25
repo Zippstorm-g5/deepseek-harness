@@ -84,7 +84,8 @@ export function installWindowsDirectoryInstaller() {
     await writeFile(uninstaller, directoryUninstaller(await readFile(join(templates, 'uninstaller.nsh'), 'utf8')))
     adapted = replaceOnce(adapted, '!include "uninstaller.nsh"', `!include "${uninstaller}"`)
     const updaterCacheName = this.packager.appInfo.updaterCacheDirName
-    return `!define DSH_UPDATER_CACHE_NAME "${updaterCacheName}"\n!define DSH_INSTALLER_LOG_DIR "$LOCALAPPDATA\\${updaterCacheName}\\installer-logs"\n!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n${await compute.call(this, adapted, ...args)}`
+    const definitions = `!define DSH_UPDATER_CACHE_NAME "${updaterCacheName}"\n!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n`
+    return compute.call(this, `${definitions}${adapted}`, ...args)
   }
 }
 

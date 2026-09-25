@@ -136,12 +136,17 @@ ManifestDPIAware true
   StrCpy $R1 "$R0"
 !macroend
 
-; The report outlives $PLUGINSDIR so a user can send it; silent installs keep only the file. The updater cache
-; directory is never an installation target and leaves with the application on uninstall.
-; The directory smoke fixture predefines DSH_INSTALLER_LOG_DIR to keep reports inside its scratch tree.
-!ifndef DSH_INSTALLER_LOG_DIR
-  !define DSH_INSTALLER_LOG_DIR "$LOCALAPPDATA\${DSH_UPDATER_CACHE_NAME}\installer-logs"
-!endif
+; The report outlives $PLUGINSDIR so a user can send it; silent installs keep only the file. The smoke fixture
+; overrides the destination, while release installers derive the updater cache from electron-builder's store path.
+!macro InstallerResolveLogDirectory Output
+  !ifdef DSH_INSTALLER_LOG_DIR
+    StrCpy ${Output} "${DSH_INSTALLER_LOG_DIR}"
+  !else
+    StrCpy ${Output} "$LOCALAPPDATA\${APP_INSTALLER_STORE_FILE}"
+    ${GetParent} "${Output}" ${Output}
+    StrCpy ${Output} "${Output}\installer-logs"
+  !endif
+!macroend
 
 ; A silent updater cannot show the running-application prompt. Preserve the failed handoff facts outside
 ; $PLUGINSDIR so a later diagnostic can distinguish a slow shutdown from extraction or replacement failure.
@@ -154,13 +159,15 @@ ManifestDPIAware true
   Push $5
   Push $6
   Push $R2
+  Push $R3
   StrCpy $R2 0
   ${If} ${Errors}
     StrCpy $R2 1
   ${EndIf}
   ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
-  CreateDirectory "${DSH_INSTALLER_LOG_DIR}"
-  StrCpy $0 "${DSH_INSTALLER_LOG_DIR}\update-wait-failure-$2$1$0-$4$5$6.log"
+  !insertmacro InstallerResolveLogDirectory $R3
+  CreateDirectory "$R3"
+  StrCpy $0 "$R3\update-wait-failure-$2$1$0-$4$5$6.log"
   ClearErrors
   FileOpen $1 "$0" w
   ${IfNot} ${Errors}
@@ -178,6 +185,7 @@ ManifestDPIAware true
   ${Else}
     ClearErrors
   ${EndIf}
+  Pop $R3
   Pop $R2
   Pop $6
   Pop $5
@@ -196,9 +204,12 @@ ManifestDPIAware true
   Push $4
   Push $5
   Push $6
+  Push $R3
   ; GetTime yields zero-padded day, month, year, weekday, hour, minute, second.
   ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
-  StrCpy $0 "${DSH_INSTALLER_LOG_DIR}\extract-failure-$2$1$0-$4$5$6.log"
+  !insertmacro InstallerResolveLogDirectory $R3
+  CreateDirectory "$R3"
+  StrCpy $0 "$R3\extract-failure-$2$1$0-$4$5$6.log"
   StrCpy $1 1
   ${If} ${Silent}
     StrCpy $1 0
@@ -207,6 +218,7 @@ ManifestDPIAware true
   ${If} $2 == 1
     DetailPrint $0
   ${EndIf}
+  Pop $R3
   Pop $6
   Pop $5
   Pop $4
