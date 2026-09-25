@@ -12,6 +12,7 @@ import { writeDesktopRuntime } from '../src/runtime-tree.ts'
 
 vi.mock('../scripts/windows-sign.mjs', () => ({
   createWindowsTokenSigner: () => () => { throw new Error('test must not invoke hardware signing') },
+  createWindowsSigner: () => () => { throw new Error('test must not invoke signing') },
   installWindowsNsisBootstrapSigner: () => undefined,
   resolveWindowsUpdatePublisher: () => 'CN=Fixture,O=Fixture,C=CN',
   scrubWindowsSigningEnvironment: (environment: NodeJS.ProcessEnv) => environment,

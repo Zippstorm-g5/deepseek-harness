@@ -15,7 +15,7 @@ function replaceOnce(source, before, after) {
 /**
  * Preserve upstream registration and uninstall UI while replacing payload installation.
  * @param {string} source - Pinned electron-builder installSection.nsh contents.
- * @returns {string} Section with staging before shutdown and directory promotion before registration.
+ * @returns {string} Section with old-directory retirement after shutdown and promotion before registration.
  */
 export function directoryInstallSection(source) {
   let result = source.replaceAll('\r\n', '\n')
@@ -35,8 +35,11 @@ export function directoryInstallSection(source) {
     Call uninstallOldVersion
   \${EndIf}
 !macroend`)
-  result = replaceOnce(result, '!insertmacro setLinkVars', `!insertmacro setLinkVars
-!insertmacro dshStageApplication`)
+  result = replaceOnce(result, '!endif\n\nVar /GLOBAL keepShortcuts', `!endif
+
+!insertmacro dshStageApplication
+
+Var /GLOBAL keepShortcuts`)
   result = replaceOnce(result, '!insertmacro installApplicationFiles', 'Call dshPromoteDirectories\nIfErrors 0 +4\n  SetErrorLevel 2\n  MessageBox MB_OK|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDOK\n  Quit')
   result = replaceOnce(result, '!ifdef UNINSTALLER_ICON\n  File /oname=uninstallerIcon.ico "${UNINSTALLER_ICON}"\n!endif\n', '')
   // The staging macro uses the upstream installer macro, including its signed uninstaller.
@@ -80,7 +83,9 @@ export function installWindowsDirectoryInstaller() {
     const uninstaller = join(directory, 'uninstaller.nsh')
     await writeFile(uninstaller, directoryUninstaller(await readFile(join(templates, 'uninstaller.nsh'), 'utf8')))
     adapted = replaceOnce(adapted, '!include "uninstaller.nsh"', `!include "${uninstaller}"`)
-    return `!define DSH_UPDATER_CACHE_NAME "${this.packager.appInfo.updaterCacheDirName}"\n!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n${await compute.call(this, adapted, ...args)}`
+    const updaterCacheName = this.packager.appInfo.updaterCacheDirName
+    const definitions = `!define DSH_UPDATER_CACHE_NAME "${updaterCacheName}"\n!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${dirname(dirname(sourceTool))}"\n`
+    return compute.call(this, `${definitions}${adapted}`, ...args)
   }
 }
 

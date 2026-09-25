@@ -102,11 +102,11 @@ SectionEnd
     await writeFile(strings, sourceStrings.split('\n').filter((line) =>
       !line.startsWith('LangString ') || line.includes(`\${LANG_${languageId}}`)).join('\n'))
     const include = join(languageOutput, 'include.nsh')
-    await writeFile(include, `!define INSTALLER_BUILD_DIR "${join(output, 'ui')}"\n!define INSTALLER_STRINGS_FILE "${strings}"\n!include "${join(appRoot, 'scripts', 'installer.nsh')}"\n`)
+    await writeFile(include, `!define INSTALLER_BUILD_DIR "${join(output, 'ui')}"\n!define INSTALLER_STRINGS_FILE "${strings}"\n!define DSH_INSTALLER_LOG_DIR "${join(languageOutput, 'installer-logs')}"\n!include "${join(appRoot, 'scripts', 'installer.nsh')}"\n`)
     await build({ projectDir: appRoot, prepackaged: payload, targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64), publish: 'never',
       config: { ...config, productName, extraMetadata: { ...config.extraMetadata, name: packageName },
         artifactName: 'installer-test.exe', directories: { output: languageOutput },
-        nsis: { ...config.nsis, guid, include, installerLanguages: [language] }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
+        nsis: { ...config.nsis, guid, include, installerLanguages: [language], installerSidebar: join(output, 'ui', 'uninstaller-sidebar.bmp'), uninstallerSidebar: join(output, 'ui', 'uninstaller-sidebar.bmp') }, beforeBuild: undefined, afterPack: undefined, afterSign: undefined, artifactBuildCompleted: undefined },
     })
     if (process.argv.includes('--compile-only')) continue
     const result = await execute('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',

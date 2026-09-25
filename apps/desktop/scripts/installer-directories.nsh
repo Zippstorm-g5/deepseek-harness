@@ -31,6 +31,9 @@ Var dshNewMoved
   StrCpy $dshFinalDirectory $INSTDIR
   System::Call 'ole32::CoCreateGuid(g .r0) i .r1'
   ${If} $1 != 0
+    !ifmacrodef InstallerReportUpdateHandoffFailure
+      !insertmacro InstallerReportUpdateHandoffFailure "could not create the update transaction identifier"
+    !endif
     SetErrorLevel 2
     Quit
   ${EndIf}
@@ -38,9 +41,31 @@ Var dshNewMoved
   StrCpy $dshOldDirectory "$INSTDIR.old-$0"
   StrCpy $dshOldMoved ""
   StrCpy $dshNewMoved ""
+  ; Remove the launchable path before extraction so a user cannot reopen the old application mid-update.
+  SetOutPath $PLUGINSDIR
+  ClearErrors
+  ${If} ${FileExists} "$dshFinalDirectory\*.*"
+    Rename $dshFinalDirectory $dshOldDirectory
+    ${If} ${Errors}
+      !ifmacrodef InstallerReportUpdateHandoffFailure
+        !insertmacro InstallerReportUpdateHandoffFailure "installed application directory could not be retired"
+      !endif
+      Call dshRollbackDirectories
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+    StrCpy $dshOldMoved "1"
+  ${Else}
+    ; NSIS can create the destination before the install section starts.
+    RMDir $dshFinalDirectory
+  ${EndIf}
   ClearErrors
   CreateDirectory $dshNewDirectory
   ${If} ${Errors}
+    !ifmacrodef InstallerReportUpdateHandoffFailure
+      !insertmacro InstallerReportUpdateHandoffFailure "update staging directory could not be created"
+    !endif
+    Call dshRollbackDirectories
     SetErrorLevel 2
     Quit
   ${EndIf}
@@ -99,21 +124,11 @@ Function dshPromoteDirectories
   ; SetOutPath opens a directory handle; release it before either rename.
   SetOutPath $PLUGINSDIR
   ClearErrors
-  ${If} ${FileExists} "$dshFinalDirectory\*.*"
-    Rename $dshFinalDirectory $dshOldDirectory
-    ${If} ${Errors}
-      Call dshRollbackDirectories
-      SetErrors
-      Return
-    ${EndIf}
-    StrCpy $dshOldMoved "1"
-  ${Else}
-    ; NSIS can create the destination before the install section starts.
-    RMDir $dshFinalDirectory
-  ${EndIf}
-  ClearErrors
   Rename $dshNewDirectory $dshFinalDirectory
   ${If} ${Errors}
+    !ifmacrodef InstallerReportUpdateHandoffFailure
+      !insertmacro InstallerReportUpdateHandoffFailure "staged application directory could not be promoted"
+    !endif
     Call dshRollbackDirectories
     SetErrors
     Return
