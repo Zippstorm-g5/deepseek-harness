@@ -38,9 +38,25 @@ Var dshNewMoved
   StrCpy $dshOldDirectory "$INSTDIR.old-$0"
   StrCpy $dshOldMoved ""
   StrCpy $dshNewMoved ""
+  ; Remove the launchable path before extraction so a user cannot reopen the old application mid-update.
+  SetOutPath $PLUGINSDIR
+  ClearErrors
+  ${If} ${FileExists} "$dshFinalDirectory\*.*"
+    Rename $dshFinalDirectory $dshOldDirectory
+    ${If} ${Errors}
+      Call dshRollbackDirectories
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+    StrCpy $dshOldMoved "1"
+  ${Else}
+    ; NSIS can create the destination before the install section starts.
+    RMDir $dshFinalDirectory
+  ${EndIf}
   ClearErrors
   CreateDirectory $dshNewDirectory
   ${If} ${Errors}
+    Call dshRollbackDirectories
     SetErrorLevel 2
     Quit
   ${EndIf}
@@ -98,19 +114,6 @@ Function dshPromoteDirectories
   !endif
   ; SetOutPath opens a directory handle; release it before either rename.
   SetOutPath $PLUGINSDIR
-  ClearErrors
-  ${If} ${FileExists} "$dshFinalDirectory\*.*"
-    Rename $dshFinalDirectory $dshOldDirectory
-    ${If} ${Errors}
-      Call dshRollbackDirectories
-      SetErrors
-      Return
-    ${EndIf}
-    StrCpy $dshOldMoved "1"
-  ${Else}
-    ; NSIS can create the destination before the install section starts.
-    RMDir $dshFinalDirectory
-  ${EndIf}
   ClearErrors
   Rename $dshNewDirectory $dshFinalDirectory
   ${If} ${Errors}

@@ -32,9 +32,9 @@ it.each(['allowOnlyOneInstallerInstance.nsh', 'installUtil.nsh'])('cleans staged
   expect(adapted).toContain('!ifndef BUILD_UNINSTALLER')
 })
 
-it('stages before stopping the application and promotes before registering the installation', () => {
+it('stops the application before retiring its launch path and promotes before registering the installation', () => {
   const result = directoryInstallSection(section)
-  expect(result.indexOf('!insertmacro dshStageApplication')).toBeLessThan(result.indexOf('!insertmacro CHECK_APP_RUNNING'))
+  expect(result.indexOf('!insertmacro CHECK_APP_RUNNING')).toBeLessThan(result.indexOf('!insertmacro dshStageApplication'))
   expect(result.indexOf('Call dshPromoteDirectories')).toBeLessThan(result.indexOf('!insertmacro registryAddInstallInfo'))
   expect(result).toContain('!insertmacro addStartMenuLink $keepShortcuts')
   expect(result).toContain('!insertmacro addDesktopLink $keepShortcuts')
@@ -43,7 +43,7 @@ it('stages before stopping the application and promotes before registering the i
   expect(result).not.toContain('File /oname=uninstallerIcon.ico')
 })
 
-it.each(['!include installer.nsh', '!insertmacro setLinkVars', '!insertmacro installApplicationFiles'])(
+it.each(['!include installer.nsh', '!endif\n\nVar /GLOBAL keepShortcuts', '!insertmacro installApplicationFiles'])(
   'rejects a missing or duplicate upstream insertion point: %s', (point) => {
     expect(() => directoryInstallSection(section.replace(point, ''))).toThrow('Desktop NSIS template changed')
     expect(() => directoryInstallSection(`${section}\n${point}`)).toThrow('Desktop NSIS template changed')
