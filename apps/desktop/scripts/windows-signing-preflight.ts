@@ -5,7 +5,7 @@ import { access, lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { createWindowsTokenSigner, scrubWindowsSigningEnvironment } from './windows-sign.mjs'
+import { createWindowsSigner, scrubWindowsSigningEnvironment } from './windows-sign.mjs'
 import { inspectWindowsRuntimeSignature, type WindowsRuntimeSignature } from './windows-runtime-signature.mjs'
 import { failPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
 
@@ -16,7 +16,7 @@ interface SigningPreflightOptions {
   environment: NodeJS.ProcessEnv
   stateDirectory?: string
   compile?: (compiler: string, source: string, output: string, environment: NodeJS.ProcessEnv) => Promise<void>
-  sign?: ReturnType<typeof createWindowsTokenSigner>
+  sign?: ReturnType<typeof createWindowsSigner>
   inspect?: (path: string) => Promise<WindowsRuntimeSignature>
 }
 
@@ -35,11 +35,13 @@ async function compileProbe(compiler: string, source: string, output: string, en
 export async function preflightWindowsSigning(options: SigningPreflightOptions): Promise<void> {
   const { environment, runDirectory } = options
   const record = (event: object): void => { recordPackagingEvent(runDirectory, event) }
-  const signer = createWindowsTokenSigner({
+  const signer = createWindowsSigner({
     certificateFile: environment.DSH_DESKTOP_WINDOWS_CER_FILE,
     signTool: environment.DSH_DESKTOP_WINDOWS_SIGNTOOL,
     keyContainer: environment.DSH_DESKTOP_WINDOWS_KEY_CONTAINER,
     tokenPin: environment.DSH_DESKTOP_WINDOWS_TOKEN_PIN,
+    pfxFile: environment.DSH_DESKTOP_WINDOWS_PFX_FILE,
+    pfxPassword: environment.DSH_DESKTOP_WINDOWS_PFX_PASSWORD,
     runDirectory,
     stateDirectory: options.stateDirectory,
   })
@@ -77,7 +79,9 @@ export async function preflightWindowsSigning(options: SigningPreflightOptions):
   record({ type: 'signing-preflight-probe', path: output, sha256: createHash('sha256').update(await readFile(output)).digest('hex') })
   await (options.sign ?? signer)({ path: output, hash: 'sha256', isNest: false })
   const signature = await inspect(output)
-  if (signature.status !== 'Valid' || !signature.timestamped || signature.thumbprint?.toUpperCase() !== thumbprint.toUpperCase()) {
+  const acceptsSelfSignedPfx = environment.DSH_DESKTOP_WINDOWS_PFX_FILE !== undefined
+    && signature.status === 'UnknownError' && signature.thumbprint?.toUpperCase() === thumbprint.toUpperCase()
+  if (!(signature.status === 'Valid' || acceptsSelfSignedPfx) || !signature.timestamped || signature.thumbprint?.toUpperCase() !== thumbprint.toUpperCase()) {
     throw new Error('Windows signing preflight verification failed: expected the configured certificate and a valid timestamp')
   }
   record({ type: 'signing-preflight-success', ...signature,

@@ -49,6 +49,8 @@ export interface DesktopQuitInspection {
 export const QUIT_INSPECTION_DEADLINE_MS = 2_000
 
 const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
+const NORMAL_GRACEFUL_EXIT_TIMEOUT_MS = 10_000
+const UPDATE_GRACEFUL_EXIT_TIMEOUT_MS = 120_000
 
 function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
   if (typeof message !== 'object' || message === null || !('type' in message)) return false
@@ -281,6 +283,7 @@ export class DesktopHostProcess {
 
   /**
    * Request teardown and await child exit, escalating termination when needed.
+   * Update handoff waits up to two minutes for a clean exit; ordinary shutdown keeps its ten-second deadline.
    * @param requireGraceful - Reject update handoff after forced termination or unsuccessful child exit.
    * @returns Completion of owned process teardown. DesktopHostUncleanExitError confirms exit but refuses installation;
    * other failures do not confirm exit.
@@ -292,7 +295,7 @@ export class DesktopHostProcess {
     this.onPlatformSession?.(null)
     if (child.connected) child.send({ type: 'shutdown' }, (error) => { if (error !== null) this.fail(error) })
     const exited = this.exitPromise ?? Promise.resolve()
-    const graceful = await exitsWithin(exited, 10_000)
+    const graceful = await exitsWithin(exited, requireGraceful ? UPDATE_GRACEFUL_EXIT_TIMEOUT_MS : NORMAL_GRACEFUL_EXIT_TIMEOUT_MS)
     if (!graceful) child.kill('SIGTERM')
     if (!await exitsWithin(exited, 5_000)) {
       child.kill('SIGKILL')
