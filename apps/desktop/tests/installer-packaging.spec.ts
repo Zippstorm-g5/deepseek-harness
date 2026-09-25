@@ -64,6 +64,22 @@ describe('installer preparation preserves application dependencies', () => {
     }
   })
 
+  it('marks Windows update artifacts for an out-of-job elevated handoff', async () => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const config = createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: 'com.example.installer',
+      DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN: 'https://policy.example.com',
+      DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: JSON.stringify({ allowedAuthOrigins: ['https://login.example.com'] }),
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_TARGET_ARCH: 'x64',
+      DSH_DESKTOP_UNSIGNED: '1',
+    }, 'win32', 'x64')
+    const updateInfo: { isAdminRightsRequired?: boolean } = {}
+    const artifact = { file: 'installer.exe', updateInfo }
+    await config.artifactBuildCompleted(artifact)
+    expect(updateInfo.isAdminRightsRequired).toBe(true)
+  })
+
   it('names unsigned Windows artifacts so they cannot pass for release builds', async () => {
     const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
     const config = createElectronBuilderConfig({

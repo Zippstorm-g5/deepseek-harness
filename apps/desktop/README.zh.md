@@ -223,7 +223,7 @@ pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Makensis $Makensis
 
 Windows 安装器在启动时和选定目标目录后检查应用是否正在运行。运行中的应用会阻止安装；静默更新最多等待应用退出两分钟。检查通过后，同路径升级会先将旧目录移出可启动路径，再在旁边解压新版本，因此重新打开旧快捷方式不会中断替换。解压或替换失败时，安装器会尝试恢复旧目录。安装器在启动前清理旧版备份。强制结束安装器或断电可能留下 `.new-*` 或 `.old-*` 目录；不同安装位置或安装范围迁移仍使用 electron-builder 的旧卸载器流程。
 
-由更新器启动的 Windows 安装会在替换前最多等待两分钟，直到使用已安装可执行文件的进程退出。超时或进程查询失败时，会在 `%LOCALAPPDATA%\<按包名派生>-updater\installer-logs`（当前为 `@deepseek-aidsh-desktop-updater`）写入 `update-wait-failure-<时间戳>.log`，并保留现有安装。解压失败时，安装器会在同一位置把 7-Zip 的结果和完整错误输出写入 `extract-failure-<时间戳>.log`，并在弹窗中显示首条错误行和 **复制错误信息** 按钮；静默安装只写入报告。未签名的 Windows 构建（`DSH_DESKTOP_UNSIGNED=1`）会将安装包命名为 `deepseek-harness-<版本>-win-x64-unsigned.exe`，以免被误当作发布产物。
+由更新器启动的 Windows 安装会在应用退出前请求提权，使安装器不随 Explorer 管理的应用作业一起终止；安装目标仍为当前用户目录。它会在替换前最多等待两分钟，直到使用已安装可执行文件的进程退出。交接、退出等待、进程查询、旧目录移出、暂存目录创建、目录提升或解压失败时，安装器会在 `%LOCALAPPDATA%\<按包名派生>-updater\installer-logs`（当前为 `@deepseek-aidsh-desktop-updater`）写入带时间戳的报告，并保留或恢复现有安装。解压报告包含 7-Zip 结果和完整错误输出，弹窗会显示首条错误行和 **复制错误信息** 按钮；静默安装只写入报告。未签名的 Windows 构建（`DSH_DESKTOP_UNSIGNED=1`）会将安装包命名为 `deepseek-harness-<版本>-win-x64-unsigned.exe`，以免被误当作发布产物。
 
 <a id="upload-updates"></a>
 

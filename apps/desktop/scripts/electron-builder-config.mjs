@@ -238,6 +238,11 @@ export function createElectronBuilderConfig(
       verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
     },
     artifactBuildCompleted: artifact => {
+      if (packagesWindows && artifact.updateInfo !== undefined) {
+        // Explorer can place the installed application in a non-breakaway job. The updater's bundled
+        // elevation helper starts the installer outside that job before the application exits.
+        artifact.updateInfo.isAdminRightsRequired = true
+      }
       if (!artifact.file.endsWith('.dmg')) return
       return notarizeMacOSDiskImageArtifact(
         artifact,
