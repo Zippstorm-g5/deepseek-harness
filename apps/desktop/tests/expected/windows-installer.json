@@ -16,6 +16,7 @@
     "silent-update-waits-for-delayed-application-shutdown",
     "silent-update-retains-directory-and-ignores-unrelated-process",
     "invalid-destination-rejection",
+    "silent-update-preflight-diagnostic",
     "uninstall"
   ]
 }

@@ -74,6 +74,9 @@ ManifestDPIAware true
   ${If} ${Silent}
     Call InstallerPreflight
     ${If} $InstallerError != ""
+      ${If} ${isUpdated}
+        !insertmacro InstallerReportUpdateHandoffFailure "installer preflight failed: $InstallerError"
+      ${EndIf}
       SetErrorLevel 2
       Quit
     ${EndIf}

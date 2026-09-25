@@ -245,6 +245,10 @@ try {
     Run-Silent ('/S /D=' + $foreign) 2
     if ((Get-Content -LiteralPath (Join-Path $foreign 'keep.txt')) -ne 'preserved') { throw 'Foreign directory changed' }
     $results.Add('invalid-destination-rejection')
+    Run-Silent ('/S --updated /D=' + $foreign) 2
+    $report = Get-ChildItem -LiteralPath (Join-Path $OutputDirectory 'installer-logs') -Filter 'update-wait-failure-*.log' | Sort-Object LastWriteTime | Select-Object -Last 1
+    if (-not $report -or -not (Get-Content -LiteralPath $report.FullName -Raw).Contains('reason=installer preflight failed:')) { throw 'Silent update preflight did not preserve a diagnostic' }
+    $results.Add('silent-update-preflight-diagnostic')
 } catch {
     Write-Output "Installer check failed: $_"
     throw
