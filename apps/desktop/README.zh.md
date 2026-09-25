@@ -221,7 +221,7 @@ Windows 发布验收还需在 Desktop 构建后手动运行[目录和替换检�
 pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir -FrameLibrary apps/desktop/.desktop-build/targets/win-x64/installer-ui/window-frame.dll
 ```
 
-Windows 安装器在启动时和选定目标目录后检查应用是否正在运行，通过检查后才将新版本解压到安装目录旁边。通过同卷目录改名替换前，安装器会再次检查。运行中的应用会阻止安装；更新启动允许等待应用退出，最长十秒。同路径升级在替换成功前保留旧目录；解压失败时旧版不变，替换失败时尝试恢复旧目录。安装器在启动前清理旧版备份。强制结束安装器或断电可能留下 `.new-*` 或 `.old-*` 目录；不同安装位置或安装范围迁移仍使用 electron-builder 的旧卸载器流程。
+Windows 安装器在启动时和选定目标目录后检查应用是否正在运行。运行中的应用会阻止安装；静默更新最多等待应用退出两分钟。检查通过后，同路径升级会先将旧目录移出可启动路径，再在旁边解压新版本，因此重新打开旧快捷方式不会中断替换。解压或替换失败时，安装器会尝试恢复旧目录。安装器在启动前清理旧版备份。强制结束安装器或断电可能留下 `.new-*` 或 `.old-*` 目录；不同安装位置或安装范围迁移仍使用 electron-builder 的旧卸载器流程。
 
 由更新器启动的 Windows 安装会在替换前最多等待两分钟，直到使用已安装可执行文件的进程退出。超时或进程查询失败时，会在 `%LOCALAPPDATA%\<按包名派生>-updater\installer-logs`（当前为 `@deepseek-aidsh-desktop-updater`）写入 `update-wait-failure-<时间戳>.log`，并保留现有安装。解压失败时，安装器会在同一位置把 7-Zip 的结果和完整错误输出写入 `extract-failure-<时间戳>.log`，并在弹窗中显示首条错误行和 **复制错误信息** 按钮；静默安装只写入报告。未签名的 Windows 构建（`DSH_DESKTOP_UNSIGNED=1`）会将安装包命名为 `deepseek-harness-<版本>-win-x64-unsigned.exe`，以免被误当作发布产物。
 

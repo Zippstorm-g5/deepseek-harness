@@ -15,7 +15,7 @@ function replaceOnce(source, before, after) {
 /**
  * Preserve upstream registration and uninstall UI while replacing payload installation.
  * @param {string} source - Pinned electron-builder installSection.nsh contents.
- * @returns {string} Section with staging before shutdown and directory promotion before registration.
+ * @returns {string} Section with old-directory retirement after shutdown and promotion before registration.
  */
 export function directoryInstallSection(source) {
   let result = source.replaceAll('\r\n', '\n')
@@ -35,8 +35,11 @@ export function directoryInstallSection(source) {
     Call uninstallOldVersion
   \${EndIf}
 !macroend`)
-  result = replaceOnce(result, '!insertmacro setLinkVars', `!insertmacro setLinkVars
-!insertmacro dshStageApplication`)
+  result = replaceOnce(result, '!endif\n\nVar /GLOBAL keepShortcuts', `!endif
+
+!insertmacro dshStageApplication
+
+Var /GLOBAL keepShortcuts`)
   result = replaceOnce(result, '!insertmacro installApplicationFiles', 'Call dshPromoteDirectories\nIfErrors 0 +4\n  SetErrorLevel 2\n  MessageBox MB_OK|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDOK\n  Quit')
   result = replaceOnce(result, '!ifdef UNINSTALLER_ICON\n  File /oname=uninstallerIcon.ico "${UNINSTALLER_ICON}"\n!endif\n', '')
   // The staging macro uses the upstream installer macro, including its signed uninstaller.
